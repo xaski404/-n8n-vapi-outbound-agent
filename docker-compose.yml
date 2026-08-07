@@ -1,0 +1,172 @@
+# ---------------------------------------------------------------------------
+# Local test stack: Frappe/ERPNext for the Vapi outbound voice agent.
+# n8n runs separately (projekt_z_n8n on http://localhost:5678).
+#
+# Bring up:   docker compose --env-file .env up -d
+# n8n UI:     http://localhost:5678  (external container: projekt_z_n8n)
+# Frappe UI:  http://localhost:8083   (login: Administrator / <ADMIN_PASSWORD>)
+# ---------------------------------------------------------------------------
+
+x-frappe-common: &frappe_common
+  image: ${FRAPPE_IMAGE:-frappe/erpnext:v15.44.0}
+  restart: unless-stopped
+  environment: &frappe_env
+    DB_HOST: mariadb
+    DB_PORT: "3306"
+    REDIS_CACHE: redis-cache:6379
+    REDIS_QUEUE: redis-queue:6379
+    SOCKETIO_PORT: "9000"
+  volumes:
+    - frappe-sites:/home/frappe/frappe-bench/sites
+    - frappe-logs:/home/frappe/frappe-bench/logs
+  networks:
+    - app-net
+
+services:
+  # -------------------------------------------------------------- frappe ----
+  mariadb:
+    image: mariadb:10.6
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-frappe_root_pass}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    networks:
+      - app-net
+
+  redis-cache:
+    image: redis:6.2-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-cache-data:/data
+    networks:
+      - app-net
+
+  redis-queue:
+    image: redis:6.2-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-queue-data:/data
+    networks:
+      - app-net
+
+  # Writes common_site_config.json (db/redis hosts) then exits.
+  configurator:
+    <<: *frappe_common
+    restart: "no"
+    entrypoint: ["bash", "-c"]
+    command:
+      - >
+        bench set-config -g db_host $$DB_HOST &&
+        bench set-config -gp db_port $$DB_PORT &&
+        bench set-config -g redis_cache "redis://$$REDIS_CACHE" &&
+        bench set-config -g redis_queue "redis://$$REDIS_QUEUE" &&
+        bench set-config -g redis_socketio "redis://$$REDIS_QUEUE" &&
+        bench set-config -gp socketio_port $$SOCKETIO_PORT
+    depends_on:
+      mariadb:
+        condition: service_healthy
+
+  # One-shot: creates the site + installs ERPNext, then exits (see profile).
+  create-site:
+    <<: *frappe_common
+    restart: "no"
+    entrypoint: ["bash", "-c"]
+    command:
+      - >-
+        wait-for-it -t 120 mariadb:3306 &&
+        wait-for-it -t 120 redis-cache:6379 &&
+        wait-for-it -t 120 redis-queue:6379 &&
+        if [ ! -f sites/${FRAPPE_SITE_NAME:-crm.localhost}/site_config.json ]; then
+        bench new-site ${FRAPPE_SITE_NAME:-crm.localhost} --no-mariadb-socket --db-root-password ${DB_ROOT_PASSWORD:-frappe_root_pass} --admin-password ${ADMIN_PASSWORD:-admin} --install-app erpnext --set-default;
+        fi
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+
+  backend:
+    <<: *frappe_common
+    depends_on:
+      create-site:
+        condition: service_completed_successfully
+
+  frontend:
+    <<: *frappe_common
+    command:
+      - nginx-entrypoint.sh
+    environment:
+      <<: *frappe_env
+      BACKEND: backend:8000
+      SOCKETIO: websocket:9000
+      FRAPPE_SITE_NAME_HEADER: ${FRAPPE_SITE_NAME:-crm.localhost}
+      UPSTREAM_REAL_IP_ADDRESS: 127.0.0.1
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "off"
+      PROXY_READ_TIMEOUT: "120"
+      CLIENT_MAX_BODY_SIZE: 50m
+    ports:
+      - "${FRAPPE_PORT:-8083}:8080"
+    depends_on:
+      backend:
+        condition: service_started
+
+  websocket:
+    <<: *frappe_common
+    command:
+      - node
+      - /home/frappe/frappe-bench/apps/frappe/socketio.js
+    depends_on:
+      backend:
+        condition: service_started
+
+  scheduler:
+    <<: *frappe_common
+    command:
+      - bench
+      - schedule
+    depends_on:
+      backend:
+        condition: service_started
+
+  queue-short:
+    <<: *frappe_common
+    command:
+      - bench
+      - worker
+      - --queue
+      - short,default
+    depends_on:
+      backend:
+        condition: service_started
+
+  queue-long:
+    <<: *frappe_common
+    command:
+      - bench
+      - worker
+      - --queue
+      - long,default,short
+    depends_on:
+      backend:
+        condition: service_started
+
+networks:
+  app-net:
+    driver: bridge
+
+volumes:
+  frappe-sites:
+  frappe-logs:
+  mariadb-data:
+  redis-cache-data:
+  redis-queue-data:

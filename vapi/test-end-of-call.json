@@ -1,0 +1,33 @@
+{
+  "message": {
+    "type": "end-of-call-report",
+    "endedReason": "customer-ended-call",
+    "durationSeconds": 84,
+    "summary": "Klient zainteresowany ofertą, prosi o kontakt handlowca w tym tygodniu.",
+    "transcript": "AI: Cześć Anna, tu Morgan...\nKlient: Tak, jestem zainteresowana.",
+    "call": {
+      "id": "test-call-eoc-001",
+      "customer": { "number": "+48555999888" },
+      "assistantOverrides": {
+        "variableValues": {
+          "full_name": "Anna Nowak",
+          "first_name": "Anna",
+          "phone_number": "+48555999888",
+          "campaign_name": "Lead Ads Wiosna 2026"
+        }
+      }
+    },
+    "analysis": {
+      "summary": "Klient zainteresowany, umówić handlowca.",
+      "structuredData": {
+        "outcome": "interested",
+        "notes": "Prosi o telefon w tym tygodniu.",
+        "budget": "5-10k"
+      }
+    },
+    "artifact": {
+      "transcript": "AI: Cześć Anna, tu Morgan...\nKlient: Tak, jestem zainteresowana.",
+      "recordingUrl": "https://storage.vapi.ai/test-recording.mp3"
+    }
+  }
+}
