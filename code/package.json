@@ -1,0 +1,13 @@
+{
+  "name": "vapi-frappe-code-nodes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Typed source for the n8n Code nodes (Meta parse + Vapi->Frappe map).",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}

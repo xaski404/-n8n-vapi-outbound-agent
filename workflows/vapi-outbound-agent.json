@@ -1,0 +1,356 @@
+{
+  "name": "Vapi Outbound Voice Agent — Meta → Vapi → Frappe",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "meta-lead-inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-meta",
+      "name": "Webhook — Meta Lead",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        -80
+      ],
+      "webhookId": "meta-lead-inbound"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Auto-ported from code/parseMetaLead.ts — keep in sync.\nfunction toE164(raw, defaultCountryCode = '+1') {\n  const trimmed = (raw ?? '').toString().trim();\n  if (!trimmed) throw new Error('phone_number is empty');\n  if (trimmed.startsWith('+')) {\n    const digits = trimmed.replace(/[^\\d+]/g, '');\n    if (!/^\\+\\d{7,15}$/.test(digits)) throw new Error('Invalid E.164 phone: ' + raw);\n    return digits;\n  }\n  const digitsOnly = trimmed.replace(/\\D/g, '');\n  if (digitsOnly.length < 7) throw new Error('Phone too short: ' + raw);\n  if (digitsOnly.startsWith('00')) return '+' + digitsOnly.slice(2);\n  return defaultCountryCode + digitsOnly;\n}\n\nfunction splitName(fullName) {\n  const parts = (fullName ?? '').toString().trim().split(/\\s+/).filter(Boolean);\n  if (parts.length === 0) return { firstName: 'Unknown', lastName: 'Lead' };\n  if (parts.length === 1) return { firstName: parts[0], lastName: '' };\n  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };\n}\n\nfunction assertRequired(p) {\n  const required = ['full_name', 'phone_number', 'campaign_name'];\n  const missing = required.filter((k) => !p[k] || p[k].toString().trim() === '');\n  if (missing.length) throw new Error('Missing required Meta fields: ' + missing.join(', '));\n}\n\nconst output = items.map((item) => {\n  const body = item.json.body ?? item.json;\n  assertRequired(body);\n  const name = splitName(body.full_name);\n  const lead = {\n    fullName: body.full_name.trim(),\n    firstName: name.firstName,\n    lastName: name.lastName,\n    phoneE164: toE164(body.phone_number),\n    campaignName: body.campaign_name.trim(),\n    leadgenId: body.leadgen_id ?? null,\n    sourcedAt: new Date().toISOString(),\n  };\n  return { json: { ...lead, _meta: body } };\n});\n\nreturn output;"
+      },
+      "id": "code-parse-meta",
+      "name": "Parse Meta Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        60,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Reads env via n8n's $env. The JS Task Runner sandbox does NOT expose\n// 'process', so process.env is unavailable — $env is the supported accessor\n// (requires N8N_BLOCK_ENV_ACCESS_IN_NODE=false + N8N_ENVIRONMENT_VARIABLES_ALLOW_LIST).\nconst env = (typeof $env !== 'undefined' && $env) ? $env : {};\nconst lead = items[0].json;\n// Vapi (cloud) must reach n8n via a PUBLIC url. PUBLIC_WEBHOOK_URL points at the\n// tunnel (e.g. cloudflared); falls back to WEBHOOK_URL for pure-local testing.\nconst webhookUrl = ((env.PUBLIC_WEBHOOK_URL || env.WEBHOOK_URL || 'http://localhost:5678/') + '').replace(/\\/?$/, '/');\n// Vapi Bearer auth expects the raw UUID, not the 'vapi_sk_' prefixed form.\nconst vapiKey = ((env.VAPI_API_KEY || '') + '').trim().replace(/^vapi_sk_/, '');\n\nconst polishSystemPrompt = [\n  'Jesteś Morgan, asystentką głosową ds. kontaktu z leadami.',\n  'Dzwonisz do {{first_name}}, ponieważ ta osoba wypełniła formularz w kampanii Meta „{{campaign_name}}”.',\n  '',\n  'JĘZYK: Mów WYŁĄCZNIE po polsku. Brzmij jak prawdziwa osoba w rozmowie telefonicznej — ciepło, naturalnie, bez sztywnego „botowego” tonu.',\n  'ODPOWIEDZI: Maksymalnie 1–2 krótkie zdania na raz. Nie monologuj. Zadaj TYLKO JEDNO pytanie i ZATRZYMAJ SIĘ — czekaj na odpowiedź, nie zadawaj kolejnego pytania w tej samej wypowiedzi.',\n  'ZASADA KRYTYCZNA: NIGDY nie mów dwóch tur pod rząd bez odpowiedzi rozmówcy. Jeśli zadałaś pytanie — CZEKAJ w ciszy, aż rozmówca skończy mówić.',\n  'POTWIERDZANIE: Gdy rozmówca poda liczbę, kwotę, dzień, termin lub zadaje pytanie (np. „200 złotych”, „poniedziałek”, „jakie są terminy?”), NAJPIERW krótko to potwierdź lub odpowiedz („Dwieście złotych, rozumiem.”, „Poniedziałek, super.”, „Sprawdzę dostępność.”), DOPIERO POTEM zadaj kolejne pytanie — jeśli w ogóle.',\n  'NASŁUCH: Poczekaj aż rozmówca SKOŃCZY zdanie — zwłaszcza przy dłuższych wypowiedziach typu „mogę w poniedziałek jak przyszły”. Nie przerywaj i nie zadawaj nowego pytania, dopóki rozmówca mówi.',\n  '',\n  'CEL ROZMOWY:',\n  '1. Upewnij się, że rozmawiasz z właściwą osobą.',\n  '2. Potwierdź zainteresowanie ofertą z reklamy.',\n  '3. Zadaj maksymalnie 2–3 pytania kwalifikujące (potrzeby, termin, budżet — jeśli pasuje do rozmowy).',\n  '4. Umów kontakt z handlowcem albo grzecznie zakończ, jeśli brak zainteresowania.',\n  '',\n  'STYL:',\n  '- Bądź ciepła, profesjonalna i konkretna.',\n  '- Nie czytaj na głos danych wrażliwych.',\n  '- Jeśli rozmówca nie ma czasu — zaproponuj oddzwonienie w dogodnym terminie.',\n  '- Jeśli trafiasz na pocztę głosową — zostaw krótką wiadomość po polsku i zakończ.',\n  '',\n  'Na końcu ustal wynik rozmowy jako jeden z: interested | not_interested | callback | voicemail | no_answer.',\n  '',\n  'ZAKOŃCZENIE ROZMOWY: Gdy masz wystarczające informacje, rozmówca się żegna albo nie ma zainteresowania — krótko podsumuj w 1 zdaniu, powiedz „Dziękuję, do usłyszenia” i NATYCHMIAST użyj narzędzia endCall, żeby rozłączyć. Nie zostawiaj linii otwartej w ciszy po pożegnaniu.',\n].join('\\n');\n\nconst maxDuration = Math.min(43200, Math.max(10, parseInt(((env.MAX_CALL_DURATION_SECONDS || '300') + ''), 10) || 300));\nconst wrapUpAt = Math.max(10, maxDuration - 30);\nconst hardEndAt = Math.max(10, maxDuration - 5);\n\nreturn [{\n  json: {\n    vapiAuthHeader: 'Bearer ' + vapiKey,\n    vapiBody: {\n      assistantId: ((env.VAPI_ASSISTANT_ID || '') + '').trim(),\n      phoneNumberId: ((env.VAPI_PHONE_NUMBER_ID || '') + '').trim(),\n      customer: { number: lead.phoneE164, name: lead.fullName },\n      assistantOverrides: {\n        variableValues: {\n          full_name: lead.fullName,\n          first_name: lead.firstName,\n          phone_number: lead.phoneE164,\n          campaign_name: lead.campaignName,\n          leadgen_id: lead.leadgenId,\n        },\n        // Assistant greets immediately on pickup (user preference). Interruptions\n        // on the greeting stay enabled so the callee can talk over it naturally.\n        firstMessageMode: 'assistant-speaks-first',\n        firstMessageInterruptionsEnabled: true,\n        firstMessage:\n          'Cześć {{first_name}}, tu Morgan. Dzwonię w sprawie formularza z kampanii {{campaign_name}}. Czy masz teraz chwilę?',\n        model: {\n          provider: 'openai',\n          model: 'gpt-4o-mini',\n          temperature: 0.75,\n          maxTokens: 120,\n          messages: [{ role: 'system', content: polishSystemPrompt }],\n          tools: [{ type: 'endCall' }],\n        },\n        // Hard limit — call ends at maxDuration (default 5 min). Hooks warn and\n        // gracefully hang up a few seconds before the cutoff.\n        maxDurationSeconds: maxDuration,\n        endCallMessage: 'Dziękuję za rozmowę. Do usłyszenia!',\n        endCallPhrases: ['do usłyszenia', 'miłego dnia', 'dziękuję za rozmowę'],\n        hooks: [\n          {\n            on: 'call.timeElapsed',\n            options: { seconds: wrapUpAt },\n            do: [{ type: 'say', exact: 'Jeszcze chwila i będę musiała kończyć rozmowę.' }],\n          },\n          {\n            on: 'call.timeElapsed',\n            options: { seconds: hardEndAt },\n            do: [\n              { type: 'say', exact: 'Dziękuję za rozmowę. Muszę kończyć — do usłyszenia!' },\n              { type: 'tool', tool: { type: 'endCall' } },\n            ],\n          },\n        ],\n        transcriber: {\n          provider: 'deepgram',\n          model: 'nova-2',\n          language: 'pl',\n          endpointing: 350,\n          smartFormat: false,\n        },\n        voice: {\n          // Cartesia Sonic-3 — tańszy (~$0.015/min vs ElevenLabs ~$0.05/min),\n          // szybki, wspiera polski natywnie. Konfigurowalne przez .env.\n          provider: (env.VAPI_VOICE_PROVIDER || 'cartesia'),\n          model: (env.VAPI_VOICE_MODEL || 'sonic-3'),\n          voiceId: (env.VAPI_VOICE_ID || '3d335974-4c4a-400a-84dc-ebf4b73aada6'),\n          language: 'pl',\n          generationConfig: { speed: 0.96 },\n        },\n        // waitSeconds 0.9 — chwilowa pauza po odebraniu, żeby pierwsze słowo\n        // („Cześć…”) nie było ucięte zanim kanał audio się ustabilizuje.\n        startSpeakingPlan: {\n          waitSeconds: 0.9,\n          smartEndpointingPlan: { provider: 'vapi' },\n          transcriptionEndpointingPlan: {\n            onPunctuationSeconds: 0.15,\n            onNoPunctuationSeconds: 1.4,\n            onNumberSeconds: 0.5,\n          },\n        },\n        // Pozwala rozmówcy wejść w słowo (naturalna rozmowa), bez łykania\n        // krótkich wtrąceń jako backchannel.\n        stopSpeakingPlan: {\n          numWords: 0,\n          voiceSeconds: 0.2,\n          backoffSeconds: 1.0,\n        },\n        analysisPlan: {\n          // Poprawny klucz to summaryPlan (nie summaryPrompt) — inaczej Vapi\n          // nie generuje analysis.summary i pole w CRM zostaje puste.\n          summaryPlan: {\n            enabled: true,\n            messages: [\n              {\n                role: 'system',\n                content:\n                  'Jesteś asystentem tworzącym krótkie notatki CRM po polsku. Podsumuj rozmowę w 2–3 zdaniach: zainteresowanie, potrzeby, ustalony termin/oddzwonienie oraz budżet, jeśli padł.',\n              },\n              { role: 'user', content: 'Transkrypcja rozmowy:\\n\\n{{transcript}}' },\n            ],\n          },\n          structuredDataPlan: {\n            enabled: true,\n            schema: {\n              type: 'object',\n              properties: {\n                outcome: {\n                  type: 'string',\n                  enum: ['interested', 'not_interested', 'callback', 'no_answer', 'voicemail'],\n                  description: 'Finalna klasyfikacja rozmowy.',\n                },\n                callback_at: { type: 'string', description: 'ISO datetime jeśli umówiono oddzwonienie.' },\n                budget: { type: 'string', description: 'Budżet podany przez leada, jeśli padł.' },\n                notes: { type: 'string', description: 'Krótka notatka dla handlowca.' },\n              },\n              required: ['outcome'],\n            },\n          },\n        },\n        // End-of-call webhook (Flow B). Vapi's /call schema nests server config\n        // under assistantOverrides, not at the top level.\n        serverMessages: ['end-of-call-report'],\n        server: {\n          url: webhookUrl + 'webhook/vapi-end-of-call',\n          timeoutSeconds: 30,\n        },\n        metadata: {\n          source: 'meta_lead_ad',\n          n8n_execution_id: (typeof $execution !== 'undefined' && $execution) ? $execution.id : null,\n        },\n      },\n    },\n  },\n}];"
+      },
+      "id": "code-build-vapi",
+      "name": "Build Vapi Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        170,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.vapi.ai/call",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.vapiAuthHeader }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.vapiBody }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "http-vapi",
+      "name": "Dispatch Vapi Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        390,
+        -80
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"accepted\", \"httpStatus\": ($json.statusCode || null), \"vapiCallId\": (($json.body && $json.body.id) || null), \"vapiError\": (($json.body && ($json.body.message || $json.body.error)) || null), \"lead\": $('Parse Meta Lead').first().json.fullName } }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "id": "respond-meta",
+      "name": "Ack Meta",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        610,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vapi-end-of-call",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-vapi",
+      "name": "Webhook — Vapi End Of Call",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        220
+      ],
+      "webhookId": "vapi-end-of-call"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Auto-ported from code/mapVapiToFrappe.ts — keep in sync.\nfunction outcomeToStatus(outcome) {\n  switch ((outcome ?? '').toLowerCase()) {\n    case 'interested': return 'Interested';\n    case 'callback': return 'Replied';\n    case 'not_interested': return 'Do Not Contact';\n    case 'no_answer':\n    case 'voicemail': return 'Open';\n    default: return 'Lead';\n  }\n}\n\nfunction splitName(fullName) {\n  const parts = (fullName ?? '').trim().split(/\\s+/).filter(Boolean);\n  if (parts.length <= 1) return { first: parts[0] || 'Unknown', last: parts[1] || '' };\n  return { first: parts[0], last: parts.slice(1).join(' ') };\n}\n\nconst output = items.map((item) => {\n  const root = item.json.body ?? item.json;\n  const msg = root.message ?? {};\n\n  if (msg.type && msg.type !== 'end-of-call-report') {\n    return { json: { skipped: true, reason: 'Ignored event: ' + msg.type } };\n  }\n\n  const vars = (msg.call && msg.call.assistantOverrides && msg.call.assistantOverrides.variableValues) || {};\n  const structured = (msg.analysis && msg.analysis.structuredData) || {};\n\n  const phone =\n    (msg.call && msg.call.customer && msg.call.customer.number) ||\n    (msg.customer && msg.customer.number) ||\n    vars.phone_number ||\n    '';\n\n  const fullName = vars.full_name || structured.notes || 'Unknown Lead';\n  const nm = splitName(fullName);\n\n  const summary = (msg.analysis && msg.analysis.summary) || msg.summary || (structured && structured.notes) || '';\n  const transcript = (msg.artifact && msg.artifact.transcript) || msg.transcript || '';\n  // recordingUrl is an internal R2 path without auth — NOT playable in browser.\n  // presignedMonoUrl includes the signature query string and actually works.\n  const recordingUrl =\n    (msg.artifact && (msg.artifact.presignedMonoUrl || msg.artifact.presignedStereoUrl)) ||\n    (msg.artifact && msg.artifact.recordingUrl) ||\n    '';\n\n  const payload = {\n    lead_name: fullName,\n    first_name: nm.first,\n    last_name: nm.last,\n    mobile_no: phone,\n    phone: phone,\n    source: 'Campaign',\n    custom_campaign: vars.campaign_name || 'Unknown',\n    status: outcomeToStatus(structured.outcome),\n    custom_call_outcome: structured.outcome || msg.endedReason || 'unknown',\n    custom_call_summary: summary,\n    custom_call_recording_url: recordingUrl,\n    custom_vapi_call_id: (msg.call && msg.call.id) || '',\n  };\n  if (transcript) payload.notes = [{ note: 'Vapi transcript:\\n' + transcript }];\n\n  return {\n    json: {\n      frappe: payload,\n      upsertKey: phone,\n      recordingDownloadUrl: recordingUrl,\n      vapiCallId: (msg.call && msg.call.id) || '',\n      structured: structured,\n      endedReason: msg.endedReason ?? null,\n      durationSeconds: msg.durationSeconds ?? null,\n    },\n  };\n});\n\nreturn output;"
+      },
+      "id": "code-map-frappe",
+      "name": "Map Vapi to Frappe",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        170,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Attach Frappe HTTP headers/URL to mapped payload.\n// Uses $env (JS Task Runner sandbox has no 'process').\nconst env = (typeof $env !== 'undefined' && $env) ? $env : {};\nconst item = items[0].json;\nconst base = ((env.FRAPPE_BASE_URL || 'http://frontend:8080') + '').replace(/\\/?$/, '');\nreturn [{\n  json: {\n    ...item,\n    frappeUrl: base + '/api/resource/Lead',\n    frappeAuthHeader: 'token ' + ((env.FRAPPE_API_KEY || '') + '') + ':' + ((env.FRAPPE_API_SECRET || '') + ''),\n  },\n}];"
+      },
+      "id": "code-build-frappe-req",
+      "name": "Build Frappe Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.frappeUrl }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.frappeAuthHeader }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.frappe }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "http-frappe",
+      "name": "Upsert Frappe Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        220
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Download Vapi recording and upload to Frappe — permanent /files/ URL\n// (presignedMonoUrl from Vapi expires after ~30 min).\nconst env = (typeof $env !== 'undefined' && $env) ? $env : {};\nconst helpers = (typeof $helpers !== 'undefined' && $helpers) ? $helpers : this.helpers;\nconst mapItem = $('Map Vapi to Frappe').first().json;\nconst upsert = $('Upsert Frappe Lead').first().json;\nconst leadName = (upsert.data && upsert.data.name) || upsert.name || null;\nconst downloadUrl = mapItem.recordingDownloadUrl || '';\nconst callId = mapItem.vapiCallId || 'vapi-call';\nconst publicBase = ((env.FRAPPE_PUBLIC_URL || 'http://localhost:8083') + '').replace(/\\/?$/, '');\nconst apiBase = ((env.FRAPPE_BASE_URL || 'http://frontend:8080') + '').replace(/\\/?$/, '');\nconst auth = 'token ' + ((env.FRAPPE_API_KEY || '') + '') + ':' + ((env.FRAPPE_API_SECRET || '') + '');\n\nif (!downloadUrl || !leadName) {\n  return [{ json: { attached: false, reason: 'missing recording url or lead name', leadName } }];\n}\n\ntry {\n  const audioBuf = await helpers.httpRequest({\n    method: 'GET',\n    url: downloadUrl,\n    encoding: 'arraybuffer',\n  });\n  const filename = callId + '.wav';\n  const boundary = '----FormBoundary' + Date.now();\n  let header = '';\n  for (const [k, v] of Object.entries({ doctype: 'Lead', docname: leadName, is_private: '0' })) {\n    header += '--' + boundary + '\\r\\nContent-Disposition: form-data; name=\"' + k + '\"\\r\\n\\r\\n' + v + '\\r\\n';\n  }\n  header += '--' + boundary + '\\r\\nContent-Disposition: form-data; name=\"file\"; filename=\"' + filename + '\"\\r\\nContent-Type: audio/wav\\r\\n\\r\\n';\n  const bodyStart = Buffer.from(header, 'utf8');\n  const bodyEnd = Buffer.from('\\r\\n--' + boundary + '--\\r\\n', 'utf8');\n  const uploadBody = Buffer.concat([bodyStart, Buffer.from(audioBuf), bodyEnd]);\n\n  const uploadJson = await helpers.httpRequest({\n    method: 'POST',\n    url: apiBase + '/api/method/upload_file',\n    headers: {\n      Authorization: auth,\n      'Content-Type': 'multipart/form-data; boundary=' + boundary,\n    },\n    body: uploadBody,\n    json: true,\n  });\n\n  const fileUrl = (uploadJson.message && uploadJson.message.file_url) || uploadJson.file_url || '';\n  const permanentUrl = fileUrl.startsWith('http') ? fileUrl : publicBase + fileUrl;\n\n  await helpers.httpRequest({\n    method: 'PUT',\n    url: apiBase + '/api/resource/Lead/' + encodeURIComponent(leadName),\n    headers: { Authorization: auth, 'Content-Type': 'application/json', Accept: 'application/json' },\n    body: { custom_call_recording_url: permanentUrl },\n    json: true,\n  });\n\n  return [{ json: { attached: true, leadName, permanentUrl } }];\n} catch (err) {\n  return [{ json: { attached: false, leadName, error: String((err && err.message) || err) } }];\n}"
+      },
+      "id": "code-attach-recording",
+      "name": "Attach Recording to Frappe",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        610,
+        220
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"processed\", \"lead\": (($(\"Upsert Frappe Lead\").first().json.data && $(\"Upsert Frappe Lead\").first().json.data.name) || null), \"recordingUpload\": \"background\" } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-vapi",
+      "name": "Ack Vapi",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        220
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook — Meta Lead": {
+      "main": [
+        [
+          {
+            "node": "Parse Meta Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Meta Lead": {
+      "main": [
+        [
+          {
+            "node": "Build Vapi Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Vapi Payload": {
+      "main": [
+        [
+          {
+            "node": "Dispatch Vapi Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dispatch Vapi Call": {
+      "main": [
+        [
+          {
+            "node": "Ack Meta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook — Vapi End Of Call": {
+      "main": [
+        [
+          {
+            "node": "Map Vapi to Frappe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Vapi to Frappe": {
+      "main": [
+        [
+          {
+            "node": "Build Frappe Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Frappe Request": {
+      "main": [
+        [
+          {
+            "node": "Upsert Frappe Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Frappe Lead": {
+      "main": [
+        [
+          {
+            "node": "Ack Vapi",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Attach Recording to Frappe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": [
+    {
+      "name": "vapi"
+    },
+    {
+      "name": "frappe"
+    },
+    {
+      "name": "voice-agent"
+    }
+  ]
+}
