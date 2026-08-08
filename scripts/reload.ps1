@@ -15,10 +15,11 @@ node -e "const fs=require('fs');const w=JSON.parse(fs.readFileSync(process.argv[
 
 docker cp "$tmp" n8n:/tmp/wf.json
 docker exec n8n n8n import:workflow --input=/tmp/wf.json 2>&1 | Select-String -Pattern "imported"
-docker exec n8n n8n update:workflow --id=$wfId --active=true 2>&1 | Select-String -Pattern "Publishing"
+docker exec n8n n8n publish:workflow --id=$wfId 2>&1 | Select-String -Pattern "Publishing"
 Remove-Item $tmp -Force
 
-Set-Location (Join-Path (Split-Path $proj -Parent) "projekt_z_n8n")
-docker compose restart n8n | Out-Null
-Start-Sleep -Seconds 12
-Write-Output "n8n reloaded - workflow $wfId active"
+# Production webhooks register only after publish + running server.
+# If POST /webhook/* returns 404, restart n8n once:
+#   docker restart n8n
+# Or: powershell -ExecutionPolicy Bypass -File scripts\fix-n8n-stuck.ps1
+Write-Output "n8n reloaded - workflow $wfId published (restart n8n if webhook 404 persists)"

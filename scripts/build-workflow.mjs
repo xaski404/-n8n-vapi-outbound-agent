@@ -38,10 +38,12 @@ function splitName(fullName) {
 }
 
 function assertRequired(p) {
-  const required = ['full_name', 'phone_number', 'campaign_name'];
+  const required = ['full_name', 'phone_number'];
   const missing = required.filter((k) => !p[k] || p[k].toString().trim() === '');
   if (missing.length) throw new Error('Missing required Meta fields: ' + missing.join(', '));
 }
+
+const DEFAULT_CAMPAIGN = 'skibidi essaa six seven musztarda';
 
 const output = items.map((item) => {
   const body = item.json.body ?? item.json;
@@ -52,7 +54,7 @@ const output = items.map((item) => {
     firstName: name.firstName,
     lastName: name.lastName,
     phoneE164: toE164(body.phone_number),
-    campaignName: body.campaign_name.trim(),
+    campaignName: (body.campaign_name && body.campaign_name.toString().trim()) || DEFAULT_CAMPAIGN,
     leadgenId: body.leadgen_id ?? null,
     sourcedAt: new Date().toISOString(),
   };
@@ -152,30 +154,78 @@ const webhookUrl = ((env.PUBLIC_WEBHOOK_URL || env.WEBHOOK_URL || 'http://localh
 const vapiKey = ((env.VAPI_API_KEY || '') + '').trim().replace(/^vapi_sk_/, '');
 
 const polishSystemPrompt = [
-  'Jesteś Morgan, asystentką głosową ds. kontaktu z leadami.',
-  'Dzwonisz do {{first_name}}, ponieważ ta osoba wypełniła formularz w kampanii Meta „{{campaign_name}}”.',
+  'Jesteś Morgan, asystentką głosową Kuby — trenera personalnego.',
+  'Kontekst: dzwonisz, bo rozmówca wcześniej wypełnił formularz zapisu na BEZPŁATNY trening personalny w reklamie na Facebooku (Meta), kampania „{{campaign_name}}”.',
+  'Powód dzwonienia: potwierdzić zapis z formularza Meta i umówić pierwszą darmową sesję u Kuby.',
   '',
-  'JĘZYK: Mów WYŁĄCZNIE po polsku. Brzmij jak prawdziwa osoba w rozmowie telefonicznej — ciepło, naturalnie, bez sztywnego „botowego” tonu.',
-  'ODPOWIEDZI: Maksymalnie 1–2 krótkie zdania na raz. Nie monologuj. Zadaj TYLKO JEDNO pytanie i ZATRZYMAJ SIĘ — czekaj na odpowiedź, nie zadawaj kolejnego pytania w tej samej wypowiedzi.',
-  'ZASADA KRYTYCZNA: NIGDY nie mów dwóch tur pod rząd bez odpowiedzi rozmówcy. Jeśli zadałaś pytanie — CZEKAJ w ciszy, aż rozmówca skończy mówić.',
-  'POTWIERDZANIE: Gdy rozmówca poda liczbę, kwotę, dzień, termin lub zadaje pytanie (np. „200 złotych”, „poniedziałek”, „jakie są terminy?”), NAJPIERW krótko to potwierdź lub odpowiedz („Dwieście złotych, rozumiem.”, „Poniedziałek, super.”, „Sprawdzę dostępność.”), DOPIERO POTEM zadaj kolejne pytanie — jeśli w ogóle.',
-  'NASŁUCH: Poczekaj aż rozmówca SKOŃCZY zdanie — zwłaszcza przy dłuższych wypowiedziach typu „mogę w poniedziałek jak przyszły”. Nie przerywaj i nie zadawaj nowego pytania, dopóki rozmówca mówi.',
+  'RODO (OBOWIĄZKOWE — PIERWSZE ZDANIE ROZMOWY):',
+  'Zanim przejdziesz do czegokolwiek innego, ZAWSZE zacznij dokładnie od: „Informuję, że rozmowa jest nagrywana w celu umówienia treningu.”',
+  'To musi paść jako pierwsze zdanie — przed powitaniem, przed pytaniami, przed kampanią. Nie pomijaj tego nigdy.',
   '',
-  'CEL ROZMOWY:',
-  '1. Upewnij się, że rozmawiasz z właściwą osobą.',
-  '2. Potwierdź zainteresowanie ofertą z reklamy.',
-  '3. Zadaj maksymalnie 2–3 pytania kwalifikujące (potrzeby, termin, budżet — jeśli pasuje do rozmowy).',
-  '4. Umów kontakt z handlowcem albo grzecznie zakończ, jeśli brak zainteresowania.',
+  'OFERTA:',
+  'Pierwsza sesja treningu personalnego jest w 100% za darmo. Potem można kontynuować na płatnych pakietach — o tym też możesz krótko wspomnieć przy pytaniu o budżet.',
   '',
-  'STYL:',
-  '- Bądź ciepła, profesjonalna i konkretna.',
-  '- Nie czytaj na głos danych wrażliwych.',
-  '- Jeśli rozmówca nie ma czasu — zaproponuj oddzwonienie w dogodnym terminie.',
-  '- Jeśli trafiasz na pocztę głosową — zostaw krótką wiadomość po polsku i zakończ.',
+  'JĘZYK: Mów WYŁĄCZNIE po polsku. Brzmij naturalnie, jak w normalnej rozmowie telefonicznej.',
+  'TON (WAŻNE): Mów zawsze miło, ciepło i uprzejmie, ale neutralnie, BEZ „Pan/Pani”. Nie używaj form typu „Czy ma Pan lub Pani…”, bo brzmią sztywno.',
+  'PYTANIA: Zadawaj pytania konstruktywne i konkretne — takie, które realnie posuwają rozmowę do umówienia terminu. Bez pustych, ogólnikowych pytań.',
+  '  — Używaj bezosobowych, neutralnych zwrotów, które nie wskazują płci: „Czy to dobry moment na rozmowę?”, „Czy trening nadal jest interesujący?”, „Jaki budżet miesięczny wchodziłby w grę na treningi?”, „Ile treningów w tygodniu byłoby optymalnie?”, „Kiedy najlepiej byłoby zacząć?”, „Jaki termin pasuje najbardziej?”.',
+  '  — Unikaj końcówek zdradzających płeć rozmówcy (nie mów „zainteresowany” ani „zainteresowana” — powiedz „czy trening jest interesujący”).',
+  'NIE UŻYWAJ IMIENIA ROZMÓWCY: Nie zwracaj się do rozmówcy po imieniu. „Kuba” to imię trenera, nie rozmówcy.',
+  'ODPOWIEDZI: Maksymalnie 1–2 krótkie zdania. Jedno pytanie na turę — potem CZEKAJ.',
+  'SŁUCHAJ UWAŻNIE: Reaguj na to, co rozmówca powiedział ZA PIERWSZYM RAZEM. Nie zmuszaj do powtarzania. Jeśli ktoś już podał budżet miesięczny, liczbę treningów w tygodniu, dzień lub godzinę — zapamiętaj to i NIE pytaj o to ponownie.',
+  'ABSOLUTNY ZAKAZ MILCZENIA: Gdy rozmówca poda JAKĄKOLWIEK liczbę, kwotę, dzień tygodnia lub godzinę — MUSISZ odpowiedzieć OD RAZU, za pierwszym razem. Nigdy nie ignoruj i nie czekaj na powtórzenie.',
+  'PRZYKŁADY (reaguj natychmiast):',
+  '  — „600 zł" / „sześćset" → „Sześćset złotych miesięcznie, rozumiem." + kolejne pytanie',
+  '  — „2 razy" / „dwa razy w tygodniu" → „Dwa razy w tygodniu, zapisuję." + kolejne pytanie',
+  '  — „poniedziałek" / „w poniedziałek" → „Poniedziałek, świetnie." + dopytaj o godzinę',
+  '  — „o 14" / „o czternastej" → „O czternastej, zapisuję." (NIGDY „o czternaście:zero” ani „o 1400”)',
+  '  — SAMA GODZINA bez słowa „godzina” („szesnastą", „szesnasta", „16", „szesnaście", „na szesnastą") → potraktuj jako godzinę 16:00 → „O szesnastej, zapisuję.” Nie proś o powtórzenie, nie mów że nie rozumiesz.',
+  '  — „tak" / „jasne" / „ok" → natychmiast kontynuuj rozmowę',
+  'KRÓTKIE ODPOWIEDZI: Na „tak”, „nie”, „jasne”, „ok”, liczby, dni tygodnia — ZAWSZE natychmiast odpowiedz i kontynuuj.',
+  'WYMOWA GODZIN (BARDZO WAŻNE — sprawdź transkrypcje, tu były błędy):',
+  '  — NIGDY nie mów godzin cyframi ani w formacie „10:00”, „14:00”, „1500”, „17:zero”, „czternaście:zero”, „dziesięć:zero”. To brzmi nienaturalnie i myli rozmówcę.',
+  '  — ZAWSZE używaj poprawnej formy przymiotnikowej (dopełniacz): „o ósmej”, „o dziesiątej”, „o jedenastej”, „o trzynastej”, „o czternastej”, „o piętnastej”, „o szesnastej”, „o siedemnastej”.',
+  '  — NIE myl liczebników: „czternaście” to liczba 14, a godzina 14:00 to „czternasta” / mówisz „o czternastej”. „Dziesięć” to 10, a godzina 10:00 to „dziesiąta” / mówisz „o dziesiątej”.',
+  '  — Mapowanie slotów z grafiku (używaj WYŁĄCZNIE tych form):',
+  '     8:00 → o ósmej | 9:00 → o dziewiątej | 10:00 → o dziesiątej | 11:00 → o jedenastej',
+  '     13:00 → o trzynastej | 14:00 → o czternastej | 15:30 → o wpół do szesnastej',
+  '     16:00 → o szesnastej | 17:00 → o siedemnastej',
+  '  — Przykłady POPRAWNE: „Mamy wolne w poniedziałek o dziesiątej albo o czternastej.” / „Zapisałam na poniedziałek o czternastej.”',
+  '  — Przykłady ZAKAZANE: „o 10:00”, „o 1400”, „o czternaście:zero”, „poniedziałek dziesięć:zero i 14”.',
+  'GODZINY I TERMINY (WAŻNE): Gdy rozmówca podaje dzień i godzinę — powtórz w POPRAWNEJ formie mówionej, np. „Wtorek o czternastej, dobrze rozumiem?”. Jeśli rozmówca poda cyfry (np. „1500”, „14”) — przetłumacz na formę mówioną i potwierdź.',
+  'SAMA GODZINA BEZ SŁOWA „GODZINA” (BARDZO WAŻNE — tu był błąd): Rozmówca CZĘSTO podaje samą godzinę jednym słowem, w różnej formie gramatycznej — MUSISZ to zrozumieć za PIERWSZYM razem i NIE prosić o powtórzenie. Traktuj wszystkie te formy jako tę samą godzinę:',
+  '  — „szesnasta” / „szesnastą” / „szesnastej” / „szesnaście” / „16” → godzina 16:00 → potwierdź „O szesnastej”.',
+  '  — „czternasta” / „czternastą” / „czternastej” / „czternaście” / „14” → 14:00 → „O czternastej”.',
+  '  — „dziesiąta” / „dziesiątą” / „dziesiątej” / „dziesięć” / „10” → 10:00 → „O dziesiątej”.',
+  '  — Analogicznie każda inna godzina. Jeśli w danym dniu pytałaś już o godzinę, a rozmówca rzuca samą liczbę/formę godziny — to JEST odpowiedź na to pytanie. Przyjmij ją, nie mów „nie rozumiem”.',
+  'POTWIERDZANIE: Gdy rozmówca poda budżet lub termin — najpierw krótko potwierdź („Rozumiem, dwieście złotych miesięcznie”, „Wtorek o czternastej, super”), potem kolejne pytanie.',
+  'GDY ROZMÓWCA SAM PODAJE TERMIN (BARDZO WAŻNE): Jeśli rozmówca sam zaproponuje konkretny dzień i godzinę, NAJPIERW sprawdź w grafiku poniżej:',
+  '  — Jeśli ten termin jest WOLNY → od razu go POTWIERDŹ i zarezerwuj, np. „Poniedziałek o czternastej jest wolny, super — zapisuję!”. NIE wymieniaj wtedy żadnych innych slotów, NIE mów „Kuba ma dużo zajętych godzin” i NIE pytaj ponownie, którą godzinę wybiera. Termin już padł — po prostu go przyjmij.',
+  '  — Jeśli ten termin jest ZAJĘTY → dopiero wtedy grzecznie powiedz, że akurat ta godzina jest zajęta, i zaproponuj 2–3 najbliższe WOLNE terminy.',
   '',
-  'Na końcu ustal wynik rozmowy jako jeden z: interested | not_interested | callback | voicemail | no_answer.',
+  'SCENARIUSZ ROZMOWY (kolejność — trzymaj się tej kolejności):',
+  '0. RODO: powiedz „Informuję, że rozmowa jest nagrywana w celu umówienia treningu.” — zanim cokolwiek innego.',
+  '1. Upewnij się, że rozmówca ma chwilę.',
+  '2. Przypomnij, że dzwonisz w imieniu Kuby, bo rozmówca zapisał się przez formularz Meta na Facebooku na bezpłatny trening personalny.',
+  '3. Zapytaj neutralnie, czy bezpłatna pierwsza sesja nadal jest interesująca.',
+  '4. Zapytaj WYŁĄCZNIE o budżet MIESIĘCZNY na treningi — użyj sformułowania: „Jaki orientacyjny budżet miesięczny wchodziłby w grę na treningi personalne?” NIE pytaj ogólnie o budżet bez słowa „miesięczny”.',
+  '5. Zapytaj ile treningów w tygodniu byłoby optymalnie — użyj sformułowania: „Ile treningów w tygodniu byłoby dla Ciebie optymalnie — na przykład raz, dwa razy, czy więcej?”',
+  '6. Zapytaj, kiedy najlepiej byłoby zacząć i jaki termin pasuje na pierwszą darmową sesję.',
+  '7. GRAFIK WOLNYCH TERMINÓW (do sprawdzania i proponowania — mów godziny formą mówioną, patrz WYMOWA GODZIN):',
+  '   — Poniedziałek: wolne o dziesiątej i o czternastej (o dwunastej zajęte)',
+  '   — Wtorek: wolne o jedenastej i o szesnastej (o dziewiątej i o trzynastej zajęte)',
+  '   — Środa: wolne o siedemnastej (reszta dnia pełna)',
+  '   — Czwartek: wolne o ósmej i o trzynastej',
+  '   — Piątek: tylko o wpół do szesnastej wolne, reszta zajęta',
+  '   Jeśli rozmówca SAM zaproponował termin, który jest na tej liście wolny — od razu go potwierdź (patrz reguła „GDY ROZMÓWCA SAM PODAJE TERMIN”) i NIE wymieniaj innych slotów.',
+  '   Wolne terminy proponuj z własnej inicjatywy TYLKO wtedy, gdy rozmówca prosi o propozycję, nie ma pomysłu, albo podał godzinę, która jest zajęta. Wtedy podaj 2–3 najbliższe wolne sloty, nie całą listę.',
+  '8. Ustal wybrany termin albo zaproponuj oddzwonienie od Kuby.',
+  '9. NIE / brak czasu → podziękuj i zakończ.',
   '',
-  'ZAKOŃCZENIE ROZMOWY: Gdy masz wystarczające informacje, rozmówca się żegna albo nie ma zainteresowania — krótko podsumuj w 1 zdaniu, powiedz „Dziękuję, do usłyszenia” i NATYCHMIAST użyj narzędzia endCall, żeby rozłączyć. Nie zostawiaj linii otwartej w ciszy po pożegnaniu.',
+  'POTWIERDZENIE ZAPISU (BARDZO WAŻNE): Gdy termin jest ustalony, ZAWSZE wyraźnie powiedz, na co zapisałaś — podaj dzień tygodnia i godzinę, np. „Zapisałam Cię na poniedziałek o czternastej na bezpłatny trening u Kuby.” Nie kończ rozmowy od razu po „zapisuję” — daj rozmówcy chwilę, żeby to usłyszał. Dopiero potem podsumuj i pożegnaj się.',
+  'STYL: Ciepło, profesjonalnie, konkretnie. Poczta głosowa → krótka wiadomość, że dzwoni asystentka Kuby w sprawie zapisu z Facebooka na darmowy trening.',
+  'Wynik rozmowy: interested | not_interested | callback | voicemail | no_answer.',
+  'ZAKOŃCZENIE: Po ustaleniu terminu — NAJPIERW wyraźnie powiedz, na jaki dzień i godzinę zapisałaś (patrz „POTWIERDZENIE ZAPISU”), potem krótkie podsumowanie, potem ZAWSZE powiedz dokładnie „Elo elo trzy dwa zero” — każdą cyfrę OSOBNO słownie: „trzy”, potem „dwa”, potem „zero”. NIGDY nie mów „320”, „trzysta dwadzieścia” ani „three twenty”. Następnie „Dziękuję, do usłyszenia” i dopiero wtedy endCall. NIE rozłączaj się szybko — rozmówca musi usłyszeć potwierdzenie zapisu.',
 ].join('\\n');
 
 const maxDuration = Math.min(43200, Math.max(10, parseInt(((env.MAX_CALL_DURATION_SECONDS || '300') + ''), 10) || 300));
@@ -192,30 +242,28 @@ return [{
       assistantOverrides: {
         variableValues: {
           full_name: lead.fullName,
-          first_name: lead.firstName,
           phone_number: lead.phoneE164,
           campaign_name: lead.campaignName,
           leadgen_id: lead.leadgenId,
         },
-        // Assistant greets immediately on pickup (user preference). Interruptions
-        // on the greeting stay enabled so the callee can talk over it naturally.
+        // RODO must be heard in full before the callee can interrupt.
         firstMessageMode: 'assistant-speaks-first',
-        firstMessageInterruptionsEnabled: true,
+        firstMessageInterruptionsEnabled: false,
         firstMessage:
-          'Cześć {{first_name}}, tu Morgan. Dzwonię w sprawie formularza z kampanii {{campaign_name}}. Czy masz teraz chwilę?',
+          'Informuję, że rozmowa jest nagrywana w celu umówienia treningu. Dzień dobry, z tej strony Morgan, asystentka Kuby, trenera personalnego. Dzwonię w sprawie formularza z kampanii {{campaign_name}} na Facebooku — chodzi o bezpłatny trening personalny. Czy to dobry moment na krótką rozmowę?',
         model: {
           provider: 'openai',
           model: 'gpt-4o-mini',
-          temperature: 0.75,
-          maxTokens: 120,
+          temperature: 0.65,
+          maxTokens: 130,
           messages: [{ role: 'system', content: polishSystemPrompt }],
           tools: [{ type: 'endCall' }],
         },
         // Hard limit — call ends at maxDuration (default 5 min). Hooks warn and
         // gracefully hang up a few seconds before the cutoff.
         maxDurationSeconds: maxDuration,
-        endCallMessage: 'Dziękuję za rozmowę. Do usłyszenia!',
-        endCallPhrases: ['do usłyszenia', 'miłego dnia', 'dziękuję za rozmowę'],
+        endCallMessage: 'Elo elo trzy dwa zero. Dziękuję za rozmowę, do usłyszenia!',
+        endCallPhrases: ['elo elo trzy dwa zero', 'elo elo 320', 'do usłyszenia', 'miłego dnia', 'dziękuję za rozmowę'],
         hooks: [
           {
             on: 'call.timeElapsed',
@@ -226,44 +274,69 @@ return [{
             on: 'call.timeElapsed',
             options: { seconds: hardEndAt },
             do: [
-              { type: 'say', exact: 'Dziękuję za rozmowę. Muszę kończyć — do usłyszenia!' },
+              { type: 'say', exact: 'Elo elo trzy dwa zero. Dziękuję za rozmowę, muszę kończyć — do usłyszenia!' },
               { type: 'tool', tool: { type: 'endCall' } },
             ],
           },
         ],
         transcriber: {
           provider: 'deepgram',
-          model: 'nova-2',
+          // nova-3 obsługuje polski i ma Keyterm Prompting — dużo lepiej łapie
+          // liczby, kwoty, dni tygodnia i godziny niż nova-2.
+          model: 'nova-3',
           language: 'pl',
-          endpointing: 350,
-          smartFormat: false,
+          // 220 ms utterance-end — krótkie potwierdzenia („tak”, „jasne”) są
+          // domykane szybciej, dzięki czemu bot odpowiada od razu.
+          endpointing: 220,
+          smartFormat: true,
+          // keyterm (nova-3) — podbija rozpoznawanie fraz krytycznych dla umawiania.
+          keyterm: [
+            // Krótkie potwierdzenia/odmowy — najczęstsze, muszą być łapane pewnie.
+            'tak', 'nie', 'jasne', 'ok', 'okej', 'dobra', 'dobrze', 'zgoda', 'pewnie', 'jasne że tak', 'raczej nie', 'chętnie',
+            'poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota', 'niedziela',
+            'złotych', 'budżet', 'miesięczny', 'miesięcznie', 'tygodniu', 'treningów', 'raz w tygodniu', 'dwa razy',
+            'sto', 'dwieście', 'trzysta', 'czterysta', 'pięćset', 'sześćset',
+            'o ósmej', 'o dziesiątej', 'o jedenastej', 'o dwunastej', 'o trzynastej', 'o czternastej',
+            'o piętnastej', 'o szesnastej', 'o siedemnastej', 'wpół do szesnastej',
+            // Samodzielne formy godzin (biernik/mianownik) — padają bez słowa „o”.
+            'ósma', 'dziewiąta', 'dziesiąta', 'jedenasta', 'dwunasta', 'trzynasta', 'czternasta',
+            'piętnasta', 'szesnasta', 'siedemnasta',
+            'ósmą', 'dziewiątą', 'dziesiątą', 'jedenastą', 'dwunastą', 'trzynastą', 'czternastą',
+            'piętnastą', 'szesnastą', 'siedemnastą',
+            'elo elo trzy dwa zero', 'trzy', 'dwa', 'zero',
+          ],
         },
         voice: {
-          // Cartesia Sonic-3 — tańszy (~$0.015/min vs ElevenLabs ~$0.05/min),
-          // szybki, wspiera polski natywnie. Konfigurowalne przez .env.
-          provider: (env.VAPI_VOICE_PROVIDER || 'cartesia'),
-          model: (env.VAPI_VOICE_MODEL || 'sonic-3'),
-          voiceId: (env.VAPI_VOICE_ID || '3d335974-4c4a-400a-84dc-ebf4b73aada6'),
-          language: 'pl',
-          generationConfig: { speed: 0.96 },
+          // ElevenLabs Flash v2.5 — wcześniejsza (preferowana) wersja głosu.
+          // Konfigurowalne przez .env (VAPI_VOICE_*).
+          provider: (env.VAPI_VOICE_PROVIDER || '11labs'),
+          model: (env.VAPI_VOICE_MODEL || 'eleven_flash_v2_5'),
+          voiceId: (env.VAPI_VOICE_ID || 'EXAVITQu4vr4xnSDxMaL'),
+          stability: 0.4,
+          similarityBoost: 0.8,
+          speed: 0.94,
+          useSpeakerBoost: true,
+          optimizeStreamingLatency: 4,
         },
         // waitSeconds 0.9 — chwilowa pauza po odebraniu, żeby pierwsze słowo
         // („Cześć…”) nie było ucięte zanim kanał audio się ustabilizuje.
         startSpeakingPlan: {
-          waitSeconds: 0.9,
+          waitSeconds: 0.4,
           smartEndpointingPlan: { provider: 'vapi' },
           transcriptionEndpointingPlan: {
-            onPunctuationSeconds: 0.15,
-            onNoPunctuationSeconds: 1.4,
-            onNumberSeconds: 0.5,
+            onPunctuationSeconds: 0.1,
+            // Krótkie odpowiedzi („tak”, „jasne”, „ok”) — bardzo szybka reakcja,
+            // żeby bot nie czekał w martwej ciszy po jednowyrazowej odpowiedzi.
+            onNoPunctuationSeconds: 0.5,
+            // Po liczbie krótkie czekanie — model dokończy „400 zł” / „o 14”,
+            // ale odpowie za pierwszym razem, bez zbędnej zwłoki.
+            onNumberSeconds: 1.0,
           },
         },
-        // Pozwala rozmówcy wejść w słowo (naturalna rozmowa), bez łykania
-        // krótkich wtrąceń jako backchannel.
         stopSpeakingPlan: {
-          numWords: 0,
-          voiceSeconds: 0.2,
-          backoffSeconds: 1.0,
+          numWords: 2,
+          voiceSeconds: 0.3,
+          backoffSeconds: 0.6,
         },
         analysisPlan: {
           // Poprawny klucz to summaryPlan (nie summaryPrompt) — inaczej Vapi
@@ -274,7 +347,7 @@ return [{
               {
                 role: 'system',
                 content:
-                  'Jesteś asystentem tworzącym krótkie notatki CRM po polsku. Podsumuj rozmowę w 2–3 zdaniach: zainteresowanie, potrzeby, ustalony termin/oddzwonienie oraz budżet, jeśli padł.',
+                  'Jesteś asystentem tworzącym krótkie notatki CRM po polsku. Podsumuj rozmowę w 2–3 zdaniach: zapis z Meta, zainteresowanie darmową sesją, budżet miesięczny na treningi, liczba treningów w tygodniu, wybrany lub preferowany termin pierwszej sesji.',
               },
               { role: 'user', content: 'Transkrypcja rozmowy:\\n\\n{{transcript}}' },
             ],
@@ -290,8 +363,10 @@ return [{
                   description: 'Finalna klasyfikacja rozmowy.',
                 },
                 callback_at: { type: 'string', description: 'ISO datetime jeśli umówiono oddzwonienie.' },
-                budget: { type: 'string', description: 'Budżet podany przez leada, jeśli padł.' },
-                notes: { type: 'string', description: 'Krótka notatka dla handlowca.' },
+                budget: { type: 'string', description: 'Orientacyjny budżet MIESIĘCZNY na treningi personalne, jeśli padł (np. „400 zł miesięcznie”).' },
+                sessions_per_week: { type: 'string', description: 'Preferowana liczba treningów w tygodniu, jeśli padła (np. „2 razy”).' },
+                preferred_session_date: { type: 'string', description: 'Preferowany termin rozpoczęcia / wybrany slot treningu.' },
+                notes: { type: 'string', description: 'Krótka notatka dla trenera.' },
               },
               required: ['outcome'],
             },
@@ -344,10 +419,12 @@ if (!downloadUrl || !leadName) {
 }
 
 try {
+  const reqTimeout = 45000;
   const audioBuf = await helpers.httpRequest({
     method: 'GET',
     url: downloadUrl,
     encoding: 'arraybuffer',
+    timeout: reqTimeout,
   });
   const filename = callId + '.wav';
   const boundary = '----FormBoundary' + Date.now();
@@ -369,6 +446,7 @@ try {
     },
     body: uploadBody,
     json: true,
+    timeout: reqTimeout,
   });
 
   const fileUrl = (uploadJson.message && uploadJson.message.file_url) || uploadJson.file_url || '';
@@ -380,6 +458,7 @@ try {
     headers: { Authorization: auth, 'Content-Type': 'application/json', Accept: 'application/json' },
     body: { custom_call_recording_url: permanentUrl },
     json: true,
+    timeout: reqTimeout,
   });
 
   return [{ json: { attached: true, leadName, permanentUrl } }];
@@ -544,7 +623,7 @@ const wf = {
       parameters: {
         respondWith: 'json',
         responseBody:
-          '={{ { "status": "processed", "lead": (($("Upsert Frappe Lead").first().json.data && $("Upsert Frappe Lead").first().json.data.name) || null), "recordingUpload": "background" } }}',
+          '={{ { "status": "processed", "lead": (($("Upsert Frappe Lead").first().json.data && $("Upsert Frappe Lead").first().json.data.name) || null) } }}',
         options: { responseCode: 200 },
       },
       id: 'respond-vapi',
@@ -563,10 +642,12 @@ const wf = {
     'Map Vapi to Frappe': { main: [[{ node: 'Build Frappe Request', type: 'main', index: 0 }]] },
     'Build Frappe Request': { main: [[{ node: 'Upsert Frappe Lead', type: 'main', index: 0 }]] },
     'Upsert Frappe Lead': {
-      main: [[
-        { node: 'Ack Vapi', type: 'main', index: 0 },
-        { node: 'Attach Recording to Frappe', type: 'main', index: 0 },
-      ]],
+      main: [[{ node: 'Ack Vapi', type: 'main', index: 0 }]],
+    },
+    // Ack Vapi FIRST (Vapi gets 200 immediately), then upload WAV in background.
+    // Previously Attach ran before Ack and blocked/hung n8n on large downloads.
+    'Ack Vapi': {
+      main: [[{ node: 'Attach Recording to Frappe', type: 'main', index: 0 }]],
     },
   },
   pinData: {},
