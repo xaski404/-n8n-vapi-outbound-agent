@@ -1,0 +1,30 @@
+{
+  "message": {
+    "type": "end-of-call-report",
+    "endedReason": "customer-ended-call",
+    "durationSeconds": 45,
+    "analysis": {
+      "summary": "Test - zainteresowany darmowym treningiem personalnym",
+      "structuredData": {
+        "outcome": "interested"
+      }
+    },
+    "artifact": {
+      "transcript": "Bot: Dzień dobry...\nUser: tak interesuje",
+      "presignedMonoUrl": ""
+    },
+    "call": {
+      "id": "test-call-local-001",
+      "customer": {
+        "number": "+48111222333"
+      },
+      "assistantOverrides": {
+        "variableValues": {
+          "full_name": "Test Lead CRM",
+          "campaign_name": "skibidi essaa six seven musztarda",
+          "phone_number": "+48111222333"
+        }
+      }
+    }
+  }
+}

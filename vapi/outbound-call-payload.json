@@ -19,7 +19,7 @@
     },
 
     "firstMessageMode": "assistant-speaks-first",
-    "firstMessage": "Cześć {{first_name}}, tu Morgan. Dzwonię w sprawie formularza z kampanii {{campaign_name}}. Czy masz teraz chwilę?",
+    "firstMessage": "Informuję, że rozmowa jest nagrywana w celu umówienia treningu. Dzień dobry, z tej strony Morgan, asystentka Kuby, trenera personalnego. Dzwonię w sprawie formularza z kampanii {{campaign_name}} na Facebooku — chodzi o bezpłatny trening personalny. Czy to dobry moment na krótką rozmowę?",
 
     "model": {
       "provider": "openai",
