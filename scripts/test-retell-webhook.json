@@ -1,0 +1,28 @@
+{
+  "event": "call_analyzed",
+  "call": {
+    "call_type": "phone_call",
+    "call_id": "test-retell-local-001",
+    "agent_id": "agent_placeholder",
+    "direction": "outbound",
+    "from_number": "+48324412887",
+    "to_number": "+48111222333",
+    "disconnection_reason": "user_hangup",
+    "transcript": "Agent: Dzień dobry...\nUser: tak, interesuje mnie trening",
+    "recording_url": "",
+    "retell_llm_dynamic_variables": {
+      "full_name": "Test Lead CRM",
+      "phone_number": "+48111222333",
+      "campaign_name": "skibidi essaa six seven musztarda"
+    },
+    "call_analysis": {
+      "call_summary": "Test - zainteresowany darmowym treningiem personalnym",
+      "in_voicemail": false,
+      "custom_analysis_data": {
+        "outcome": "zainteresowany",
+        "sessions_per_week": "2",
+        "preferred_session_date": "czwartek o ósmej"
+      }
+    }
+  }
+}

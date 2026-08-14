@@ -1,5 +1,5 @@
 /**
- * Shared type contracts for the Vapi <-> Frappe voice-agent pipeline.
+ * Shared type contracts for the Retell AI <-> Google Sheets voice-agent pipeline.
  *
  * NOTE ON RUNTIME: n8n's "Code" node executes JavaScript, not TypeScript.
  * These .ts files are the authored source of truth (typed, reviewable, unit-
@@ -22,7 +22,7 @@ export interface MetaLeadPayload {
   [key: string]: unknown;
 }
 
-/** Normalised lead used to build the Vapi call request. */
+/** Normalised lead used to build the Retell outbound call request. */
 export interface NormalisedLead {
   fullName: string;
   firstName: string;
@@ -34,7 +34,38 @@ export interface NormalisedLead {
   sourcedAt: string; // ISO-8601
 }
 
-/* ------------------------------ Vapi report ------------------------------ */
+/* ----------------------------- Retell webhook ---------------------------- */
+
+export interface RetellCallAnalysis {
+  call_summary?: string;
+  in_voicemail?: boolean;
+  user_sentiment?: string;
+  call_successful?: boolean;
+  custom_analysis_data?: Record<string, unknown>;
+}
+
+export interface RetellCallObject {
+  call_type?: string;
+  call_id?: string;
+  agent_id?: string;
+  direction?: 'inbound' | 'outbound' | string;
+  from_number?: string;
+  to_number?: string;
+  disconnection_reason?: string;
+  transcript?: string;
+  recording_url?: string;
+  retell_llm_dynamic_variables?: Record<string, string>;
+  call_analysis?: RetellCallAnalysis;
+  metadata?: Record<string, unknown>;
+}
+
+/** Retell `call_analyzed` webhook body. */
+export interface RetellCallAnalyzedWebhook {
+  event: 'call_analyzed' | string;
+  call?: RetellCallObject;
+}
+
+/* ------------------------------ Vapi report (legacy) --------------------- */
 
 export type VapiEndedReason = string;
 
@@ -43,6 +74,8 @@ export interface VapiStructuredData {
   outcome?: 'interested' | 'not_interested' | 'callback' | 'no_answer' | 'voicemail' | string;
   callback_at?: string;
   budget?: string | number;
+  sessions_per_week?: string | number;
+  preferred_session_date?: string;
   notes?: string;
   [key: string]: unknown;
 }
@@ -72,6 +105,8 @@ export interface VapiEndOfCallReport {
       transcript?: string;
       messages?: VapiMessage[];
       recordingUrl?: string;
+      presignedMonoUrl?: string;
+      presignedStereoUrl?: string;
     };
     /** Some payload versions place transcript/summary at message root. */
     transcript?: string;
@@ -87,24 +122,18 @@ export interface VapiEndOfCallReport {
   };
 }
 
-/* ------------------------------ Frappe CRM ------------------------------- */
+/* ---------------------------- Google Sheets ---------------------------- */
 
-/**
- * Payload for Frappe `Lead` doctype (ERPNext) REST upsert.
- * Field names map to the standard ERPNext Lead docfields.
- */
-export interface FrappeLeadUpsert {
-  lead_name: string;
-  first_name: string;
-  last_name: string;
-  mobile_no: string;
+export type VoiceLeadStatus = 'zainteresowany' | 'niezainteresowany' | 'brak odpowiedzi';
+
+/** One row in the voice-leads spreadsheet (header row must match column order A–H). */
+export interface VoiceLeadSheetRow {
   phone: string;
-  source: string;
-  campaign_name: string;
-  status: 'Lead' | 'Open' | 'Replied' | 'Interested' | 'Converted' | 'Do Not Contact' | 'Quotation';
-  custom_call_outcome?: string;
-  custom_call_summary?: string;
-  custom_call_recording_url?: string;
-  custom_vapi_call_id?: string;
-  notes?: Array<{ note: string }>;
+  full_name: string;
+  status: VoiceLeadStatus;
+  call_summary: string;
+  recording_url: string;
+  transcript: string;
+  sessions_per_week: string;
+  preferred_session_date: string;
 }
