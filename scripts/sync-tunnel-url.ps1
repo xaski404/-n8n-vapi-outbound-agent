@@ -9,7 +9,8 @@ $proj = Split-Path $PSScriptRoot -Parent
 $envFile = Join-Path $proj ".env"
 $n8nCompose = Join-Path (Split-Path $proj -Parent) "projekt_z_n8n"
 
-$line = docker logs cloudflared 2>&1 | Select-String "https://[a-z0-9-]+\.trycloudflare\.com" | Select-Object -Last 1
+$logs = cmd /c "docker logs cloudflared 2>&1"
+$line = [regex]::Matches($logs, 'https://[a-z0-9-]+\.trycloudflare\.com') | Select-Object -Last 1
 if (-not $line) {
   Write-Host "No tunnel URL in cloudflared logs. Start it:"
   Write-Host "  cd $n8nCompose"
@@ -17,8 +18,7 @@ if (-not $line) {
   exit 1
 }
 
-$url = ($line -match "https://[a-z0-9-]+\.trycloudflare\.com") | Out-Null
-$url = $Matches[0].TrimEnd('/')
+$url = $line.Value.TrimEnd('/')
 Write-Host "Tunnel URL: $url"
 
 $content = Get-Content $envFile -Raw
@@ -32,4 +32,8 @@ Pop-Location
 Start-Sleep 8
 docker exec n8n n8n publish:workflow --id=68osxI9fvq7pBgCA 2>&1 | Out-Null
 Write-Host "Updated .env + recreated n8n. Test:"
-Write-Host "  curl -X POST $url/webhook/vapi-end-of-call -H 'Content-Type: application/json' -d '{\"message\":{\"type\":\"end-of-call-report\"}}'"
+Write-Host "  curl -X POST $url/webhook/retell-call-analyzed -H 'Content-Type: application/json' -d '@scripts/test-retell-webhook.json'"
+Write-Host ""
+Write-Host "IMPORTANT: Update Retell dashboard webhook URL to:"
+Write-Host "  $url/webhook/retell-call-analyzed"
+Write-Host "  Event: call_analyzed"

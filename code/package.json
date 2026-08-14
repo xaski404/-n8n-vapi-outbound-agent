@@ -2,12 +2,19 @@
   "name": "vapi-frappe-code-nodes",
   "version": "1.0.0",
   "private": true,
-  "description": "Typed source for the n8n Code nodes (Meta parse + Vapi->Frappe map).",
+  "description": "Typed source for the n8n Code nodes (Meta parse + Vapi->Sheets map).",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "tsx --test tests/**/*.test.ts",
+    "test:integration": "node --test ../scripts/build-workflow.test.mjs",
+    "test:e2e": "node --test ../scripts/e2e/**/*.test.mjs",
+    "test:all": "npm run typecheck && npm run test && npm run test:integration",
+    "test:everything": "npm run test:all && npm run test:e2e"
   },
   "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
     "typescript": "^5.5.4"
   }
 }
