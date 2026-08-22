@@ -1247,3 +1247,294 @@ Additional data:
 Status: **completed**
 
 </details></tool-use>
+
+_**Agent (composer-2.5-fast)**_
+
+<think><details><summary>Thought Process</summary>
+The codebase review is complete. I now have a comprehensive understanding of the project structure, existing workflows, and current capabilities.
+
+n8n runs externally on port 5678. This repository contains code nodes, workflow JSON builders, tests, and tunnel scripts. Retell is the active voice AI provider for Polish numbers via Zadarma. Vapi remains in legacy code but is excluded from type checks. A Frappe Docker stack is also legacy. I am now mapping the specific gaps against the Polish Voice AI consultant requirements.
+
+No inbound call workflow exists yet. The Retell agent could handle inbound calls if the phone number is configured in the Retell dashboard, but the n8n flow would need separate inbound-specific logic such as FAQ routing. FAQ content lives entirely in the Retell dashboard and is not tracked in this repository. Lead qualification is partially handled by Retell's post-call analysis, though those settings are configured within the Retell agent rather than inside n8n workflows.
+
+Scheduling lacks calendar integration. Preferred session dates are captured as plain text without syncing to Google Calendar or Cal.com. CRM support is limited to Google Sheets appends; Frappe is disconnected and HubSpot or Pipedrive are absent. Meta Lead Ads are only simulated via webhook, with no Facebook Graph API verification or leadgen form subscription. The implementation plan will specify exact files to create or modify. The README is outdated and references Vapi, upsert, and different sheet columns. A workflow filename incorrectly claims Vapi while the content is actually Retell.
+
+parseMetaLead.ts and build-workflow.mjs disagree on Meta Lead defaults and campaign_name requirements. mapVapiToSheets.ts is legacy code with incorrect types. The workflow writes eight
+</details></think>
+
+_**Agent (composer-2.5-fast)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="update_current_step"><details>
+<summary>Tool use: **update_current_step**</summary>
+An unknown error occurred
+</details></tool-use>
+
+_**Agent (composer-2.5-fast)**_
+
+<think><details><summary>Thought Process</summary>
+Preparing a structured analysis of the project architecture, existing workflows, and gaps against the inbound customer service requirements.
+</details></think>
+
+_**Agent (composer-2.5-fast)**_
+
+# Codebase exploration summary
+
+## Current architecture
+
+```mermaid
+flowchart LR
+  subgraph flowA [Flow A — Outbound dispatch]
+    M[POST /webhook/meta-lead-inbound] --> P[Parse Meta Lead]
+    P --> B[Build Retell Payload]
+    B --> R[POST api.retellai.com/v2/create-phone-call]
+    R --> A1[Ack Meta 202]
+  end
+
+  subgraph retell [Retell.ai]
+    R --> Call[Outbound call to lead]
+    Call --> WH[call_analyzed webhook]
+  end
+
+  subgraph flowB [Flow B — Post-call logging]
+    WH --> M2[POST /webhook/retell-call-analyzed]
+    M2 --> Map[Map Retell to Sheets]
+    Map --> IF{call_analyzed?}
+    IF -->|yes| GS[Append row → Google Sheets]
+    IF -->|no| A2[Ack skipped]
+    GS --> A3[Ack processed]
+  end
+```
+
+**Stack**
+
+| Layer | Technology | Notes |
+|-------|------------|-------|
+| Orchestration | **n8n** (external container `projekt_z_n8n` on `:5678`) | Not defined in this repo’s `docker-compose.yml` |
+| Voice AI (active) | **Retell.ai** + Polish number (Zadarma via Retell) | Agent prompt/voice configured in Retell dashboard, not in repo |
+| Voice AI (legacy) | **Vapi.ai** | Code + fixtures remain; workflow no longer uses Vapi |
+| Data store | **Google Sheets** (`Leads` tab) | Append-only via Sheets API |
+| CRM (legacy) | **Frappe/ERPNext** | Optional Docker stack; not wired to current workflow |
+| Tunneling | Cloudflare quick/named tunnel scripts | For Retell webhooks to reach local n8n |
+
+**Design pattern:** Typed TypeScript in `code/*.ts` is the source of truth; `scripts/build-workflow.mjs` embeds JS into n8n Code nodes and writes `workflows/vapi-outbound-agent.json`.
+
+---
+
+## Project structure
+
+```
+c:\Users\askik\Desktop\n8n_AI_assistant\
+├── README.md                          # Docs (partially outdated — still describes Vapi)
+├── .env.example                       # Config template
+├── docker-compose.yml                 # Legacy Frappe/ERPNext only
+├── workflows/
+│   └── vapi-outbound-agent.json       # ONLY workflow (name/content = Retell)
+├── code/
+│   ├── types.ts                       # Shared types
+│   ├── parseMetaLead.ts               # Meta lead normalization
+│   ├── mapRetellToSheets.ts           # Active post-call mapper
+│   ├── mapVapiToSheets.ts             # Legacy (excluded from typecheck)
+│   ├── tests/                         # Unit tests
+│   └── package.json                   # typecheck, test, e2e scripts
+├── scripts/
+│   ├── build-workflow.mjs             # Workflow generator (source of truth)
+│   ├── build-workflow.test.mjs
+│   ├── e2e/webhooks.test.mjs          # Live n8n webhook tests
+│   ├── setup-google-sheets.ps1
+│   ├── setup-named-tunnel.ps1, tunnel-watchdog.ps1, sync-tunnel-url.ps1
+│   ├── replay-retell-calls.mjs        # Replay missed Retell webhooks
+│   ├── test-retell-webhook.json       # Fixture
+│   └── frappe-setup.py, frappe-fix-field.py  # Legacy CRM setup
+└── vapi/                              # Legacy Vapi reference payloads
+    ├── outbound-call-payload.json
+    └── test-end-of-call.json
+```
+
+---
+
+## Voice AI providers
+
+| Provider | Status | Integration |
+|----------|--------|-------------|
+| **Retell** | **Active** | Outbound via `create-phone-call`; post-call via `call_analyzed` webhook |
+| **Vapi** | Legacy | `mapVapiToSheets.ts`, `vapi/*`, `test-vapi-webhook.json`, README references |
+| **Frappe** | Legacy / optional | Docker stack + setup scripts; replaced by Google Sheets for call outcomes |
+
+---
+
+## Existing workflows
+
+### `workflows/vapi-outbound-agent.json`
+**Display name:** `Retell Outbound Voice Agent — Meta → Retell → Google Sheets`
+
+| Flow | Webhook | What it does |
+|------|---------|--------------|
+| **A — Dispatch** | `POST /webhook/meta-lead-inbound` | Parses lead (name, phone E.164, campaign), builds Retell payload, places outbound call, returns 202 |
+| **B — Resolution** | `POST /webhook/retell-call-analyzed` | Maps `call_analyzed` event to sheet row, appends to Google Sheets columns A–H |
+
+**Google Sheets columns (current):**  
+`phone`, `full_name`, `status`, `call_summary`, `recording_url`, `transcript`, `sessions_per_week`, `preferred_session_date`
+
+**Polish-specific logic already present:**
+- Status values: `zainteresowany`, `niezainteresowany`, `brak odpowiedzi`
+- Polish spoken-hour normalization (`"czwartek o ósmej"` → `"o 8"`)
+- Default country code `+48` in generated workflow (Polish market)
+
+**Important inconsistencies:**
+- Filename/README say “Vapi”; workflow is Retell
+- README describes **upsert by phone** and 17 columns; current workflow **appends** 8 columns (duplicates on repeat calls)
+- `parseMetaLead.ts` requires `campaign_name` and defaults to `+1`; generated workflow makes campaign optional with `+48`
+
+---
+
+## Current capabilities vs requirements
+
+### What exists today
+
+| Capability | Status | Details |
+|------------|--------|---------|
+| **Outbound calls** | ✅ Implemented | Meta-style webhook → Retell outbound call |
+| **Webhooks** | ✅ Partial | Simulated Meta inbound + Retell post-call |
+| **Google Sheets mapping** | ✅ Implemented | Post-call append with Polish fields |
+| **Lead qualification (basic)** | ⚠️ Partial | Retell `custom_analysis_data`: `outcome`, `sessions_per_week`, `preferred_session_date` — configured in Retell agent, not in repo |
+| **Meta Lead Ads** | ⚠️ Simulated only | Manual POST to `/webhook/meta-lead-inbound`; no Facebook Lead Ads API/webhook verification |
+| **CRM integration** | ⚠️ Sheets only | Frappe disconnected; no pipeline CRM |
+| **Inbound answering** | ❌ Missing | No inbound workflow; mapper supports inbound phone extraction but no call-handling logic |
+| **FAQ** | ❌ Not in repo | Expected to live in Retell agent prompt/knowledge base |
+| **Scheduling** | ❌ Text only | `preferred_session_date` stored as free text; no calendar booking |
+| **Calendar integration** | ❌ Missing | No Google Calendar / Cal.com / etc. |
+| **Real Meta Lead Ads** | ❌ Missing | No Graph API subscription, signature verification, or field mapping from Meta payload |
+
+### Gaps for “Polish Voice AI consultant — training studio”
+
+| Requirement | Gap |
+|-------------|-----|
+| **Inbound customer service** | No dedicated inbound agent flow, business hours, transfer-to-human, or missed-call handling in n8n |
+| **FAQ** | No FAQ/knowledge source in repo; no dynamic FAQ lookup during calls |
+| **Lead qualification** | Qualification logic is implicit in Retell post-call analysis only; no structured scoring, budget capture, or studio-specific questions in code |
+| **Scheduling** | No availability check, slot confirmation, or calendar event creation |
+| **CRM** | Google Sheets is a log, not a CRM (no pipeline, tasks, follow-ups, dedup) |
+| **Meta Lead Ads** | No production Meta webhook; outbound trigger is manual/simulated |
+| **Outbound + inbound unified view** | Same sheet/webhook can log both directions, but no differentiation in columns or workflows |
+
+---
+
+## Key files reference
+
+| File | Role |
+|------|------|
+| `c:\Users\askik\Desktop\n8n_AI_assistant\scripts\build-workflow.mjs` | Generates entire n8n workflow; edit here first |
+| `c:\Users\askik\Desktop\n8n_AI_assistant\workflows\vapi-outbound-agent.json` | Importable n8n workflow (regenerate via build script) |
+| `c:\Users\askik\Desktop\n8n_AI_assistant\code\parseMetaLead.ts` | Meta lead → normalized lead |
+| `c:\Users\askik\Desktop\n8n_AI_assistant\code\mapRetellToSheets.ts` | Retell `call_analyzed` → sheet row |
+| `c:\Users\askik\Desktop\n8n_AI_assistant\code\types.ts` | Shared contracts |
+| `c:\Users\askik\Desktop\n8n_AI_assistant\code\mapVapiToSheets.ts` | Legacy Vapi mapper (stale types) |
+
+### `.env` variable names (no values)
+
+From `.env.example` + `.env`:
+
+| Group | Variables |
+|-------|-----------|
+| General | `TZ` |
+| n8n / tunnel | `N8N_HOST`, `WEBHOOK_URL`, `PUBLIC_WEBHOOK_URL`, `CLOUDFLARE_TUNNEL_TOKEN` |
+| Retell | `RETELL_API_KEY`, `RETELL_AGENT_ID`, `RETELL_FROM_NUMBER` |
+| Google Sheets | `GOOGLE_SHEETS_DOCUMENT_ID`, `GOOGLE_SHEETS_SHEET_NAME` |
+| Frappe (legacy) | `FRAPPE_IMAGE`, `FRAPPE_SITE_NAME`, `FRAPPE_PORT`, `FRAPPE_BASE_URL`, `FRAPPE_PUBLIC_URL`, `ADMIN_PASSWORD`, `DB_ROOT_PASSWORD`, `FRAPPE_API_KEY`, `FRAPPE_API_SECRET` |
+
+**Not in `.env.example` but in README (Vapi legacy):** `VAPI_API_KEY`, `VAPI_ASSISTANT_ID`, `VAPI_PHONE_NUMBER_ID`
+
+### Documentation
+
+| Doc | Status |
+|-----|--------|
+| `README.md` | Primary doc — **outdated** (Vapi, upsert, old sheet schema) |
+| `.specstory/history/*.md` | Chat history (Polish phone setup, scheduling discussions, Frappe→Sheets migration) |
+| No `docs/` folder | — |
+
+### Tests
+
+- Unit: `code/tests/parseMetaLead.test.ts`, `code/tests/mapRetellToSheets.test.ts`
+- Integration: `scripts/build-workflow.test.mjs`
+- E2E: `scripts/e2e/webhooks.test.mjs` (requires live n8n)
+
+---
+
+## Recommended implementation plan
+
+### Phase 0 — Align baseline (1–2 days)
+
+| Action | Files |
+|--------|-------|
+| Rename workflow file for clarity | `workflows/vapi-outbound-agent.json` → `workflows/retell-outbound-agent.json`; update references in README, tests, scripts |
+| Sync `parseMetaLead.ts` with workflow | `code/parseMetaLead.ts`, `scripts/build-workflow.mjs` (+48 default, optional `campaign_name`) |
+| Fix Sheets to upsert by phone | `scripts/build-workflow.mjs` — replace append with lookup + update/append |
+| Expand sheet schema for studio CRM | `code/types.ts`, `code/mapRetellToSheets.ts`, `scripts/build-workflow.mjs`, `scripts/setup-google-sheets.ps1` — add `direction`, `source`, `budget`, `lead_score`, `callback_at`, `meta_leadgen_id` |
+| Update README | `README.md` — Retell architecture, webhooks, columns, tunnel setup |
+
+### Phase 1 — Real Meta Lead Ads (2–3 days)
+
+| Action | Files |
+|--------|-------|
+| Parse real Meta Lead Ads webhook payload | **Create** `code/parseMetaLeadWebhook.ts` (Graph API `leadgen` field mapping, verification token) |
+| Add Meta webhook workflow branch | **Modify** `scripts/build-workflow.mjs` — new node path or separate workflow |
+| Meta config | **Modify** `.env.example` — add `META_APP_SECRET`, `META_VERIFY_TOKEN`, `META_PAGE_ID`, `META_ACCESS_TOKEN` |
+| Tests | **Create** `code/tests/parseMetaLeadWebhook.test.ts`, fixtures in `scripts/test-meta-lead-webhook.json` |
+
+### Phase 2 — Inbound customer service (3–5 days)
+
+Retell handles inbound if the Polish number is assigned to an inbound-capable agent; n8n handles logging and downstream actions.
+
+| Action | Files |
+|--------|-------|
+| Separate inbound vs outbound in mapper | **Modify** `code/mapRetellToSheets.ts` — set `direction`, `source` (`inbound_call` / `meta_lead_ad`), different status rules |
+| Optional: pre-call webhook for caller lookup | **Create** `code/lookupLeadByPhone.ts`, workflow webhook `retell-call-started` |
+| Retell agent config (outside repo) | Inbound agent prompt: studio FAQ, hours, qualification script — document in README or **Create** `docs/retell-agent-prompt.md` |
+| FAQ knowledge base | **Create** `data/faq-pl.json` or Google Sheet tab `FAQ`; optional Retell KB upload script `scripts/sync-faq-to-retell.mjs` |
+
+### Phase 3 — Lead qualification (2–3 days)
+
+| Action | Files |
+|--------|-------|
+| Structured qualification schema | **Modify** `code/types.ts` — `LeadQualification` (goal, experience, budget, availability, location) |
+| Extend post-call mapper | **Modify** `code/mapRetellToSheets.ts` |
+| Retell post-call analysis | Configure in Retell dashboard to match schema (document in `docs/retell-agent-prompt.md`) |
+
+### Phase 4 — Scheduling + calendar (3–5 days)
+
+| Action | Files |
+|--------|-------|
+| Parse/normalize preferred slots | **Create** `code/normalizeScheduleSlot.ts` (Polish date/time → ISO) |
+| Google Calendar availability + booking | **Create** `code/bookGoogleCalendar.ts`; workflow HTTP nodes or **Create** `workflows/scheduling-tool.json` as Retell custom function webhook |
+| Retell function calling | Webhook `POST /webhook/retell-check-availability`, `POST /webhook/retell-book-slot` |
+| Config | `.env.example` — `GOOGLE_CALENDAR_ID`, `STUDIO_TIMEZONE`, `BOOKING_DURATION_MINUTES` |
+
+### Phase 5 — CRM beyond Sheets (optional, 3–7 days)
+
+Pick one:
+
+| Option | Files |
+|--------|-------|
+| **Sheets as CRM++** | Upsert, status pipeline tab, follow-up date column — all in `build-workflow.mjs` |
+| **HubSpot / Pipedrive** | **Create** `code/mapRetellToCrm.ts`, CRM-specific workflow branch |
+| **Revive Frappe** | **Create** `code/mapRetellToFrappe.ts` (replace deleted Vapi version), wire in workflow |
+
+### Phase 6 — Production hardening
+
+| Action | Files |
+|--------|-------|
+| Stable tunnel | Use `scripts/setup-named-tunnel.ps1`, set `CLOUDFLARE_TUNNEL_TOKEN` |
+| E2E coverage | Extend `scripts/e2e/webhooks.test.mjs` for inbound + Meta real payload |
+| Remove/archive legacy | Move `mapVapiToSheets.ts`, `vapi/` to `legacy/` or delete after README update |
+
+---
+
+## Suggested priority for training studio MVP
+
+1. **Fix docs + upsert + schema alignment** (stop duplicate rows, clear Retell setup)
+2. **Real Meta Lead Ads webhook** (automated outbound on form submit)
+3. **Inbound Retell agent** (FAQ + qualification in Retell prompt; n8n logs with `direction=inbound`)
+4. **Google Calendar booking tool** (Retell function → n8n → Calendar API)
+5. **CRM choice** (Sheets++ or HubSpot) for follow-ups and trainer handoff
+
+The repo is a solid **outbound Meta-sim → Retell → Sheets** foundation with Polish localization hooks, but inbound service, real Meta integration, FAQ management, and calendar scheduling still need to be built — mostly as new TypeScript mappers, workflow branches in `build-workflow.mjs`, Retell agent configuration, and new env vars.

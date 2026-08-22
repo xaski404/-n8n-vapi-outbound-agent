@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 import { parseMetaLead } from '../parseMetaLead';
 
-const fixturePath = join(process.cwd(), '..', 'scripts', '_test-lead.json');
+const fixturePath = join(process.cwd(), '..', 'scripts', 'test-meta-lead.json');
 const sampleLead = JSON.parse(readFileSync(fixturePath, 'utf8'));
 
 describe('parseMetaLead', () => {

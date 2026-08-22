@@ -1,0 +1,46 @@
+{
+  "studio_name": "Studio Treningowe",
+  "language": "pl",
+  "entries": [
+    {
+      "id": "hours",
+      "question": "Jakie są godziny otwarcia?",
+      "answer": "Studio jest czynne od poniedziałku do piątku w godzinach 8:00–20:00. W soboty i niedziele jesteśmy zamknięci."
+    },
+    {
+      "id": "location",
+      "question": "Gdzie znajduje się studio?",
+      "answer": "Studio mieści się w centrum miasta. Dokładny adres i dojazd wyślemy SMS-em po umówieniu treningu próbnego."
+    },
+    {
+      "id": "trial",
+      "question": "Czy mogę przyjść na trening próbny?",
+      "answer": "Tak, pierwsza konsultacja z trenerem trwa około 60 minut. Mogę od razu sprawdzić wolny termin w kalendarzu."
+    },
+    {
+      "id": "pricing",
+      "question": "Ile kosztują treningi?",
+      "answer": "Ceny zależą od pakietu — od 120 zł za pojedynczą sesję. Szczegóły omawiamy podczas treningu próbnego lub telefonicznie z trenerem."
+    },
+    {
+      "id": "equipment",
+      "question": "Co zabrać na trening?",
+      "answer": "Wygodny strój sportowy, buty na zmianę i butelkę wody. Ręczniki i sprzęt mamy na miejscu."
+    },
+    {
+      "id": "cancel",
+      "question": "Jak odwołać wizytę?",
+      "answer": "Wystarczy zadzwonić lub napisać SMS minimum 24 godziny przed terminem. Chętnie pomożemy przełożyć wizytę."
+    },
+    {
+      "id": "parking",
+      "question": "Czy jest parking?",
+      "answer": "Tak, mamy bezpłatny parking dla klientów tuż przy wejściu do studia."
+    },
+    {
+      "id": "experience",
+      "question": "Czy to studio jest dla początkujących?",
+      "answer": "Oczywiście. Pracujemy z osobami na każdym poziomie — od kompletnych początkujących po zaawansowanych. Trener dostosuje plan do Twoich celów."
+    }
+  ]
+}

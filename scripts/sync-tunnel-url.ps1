@@ -31,9 +31,12 @@ Pop-Location
 
 Start-Sleep 8
 docker exec n8n n8n publish:workflow --id=68osxI9fvq7pBgCA 2>&1 | Out-Null
-Write-Host "Updated .env + recreated n8n. Test:"
+
+Push-Location $proj
+node scripts/sync-retell-urls.mjs
+Pop-Location
+
+Write-Host "Updated .env + recreated n8n + synced Retell URLs. Test:"
 Write-Host "  curl -X POST $url/webhook/retell-call-analyzed -H 'Content-Type: application/json' -d '@scripts/test-retell-webhook.json'"
 Write-Host ""
-Write-Host "IMPORTANT: Update Retell dashboard webhook URL to:"
-Write-Host "  $url/webhook/retell-call-analyzed"
-Write-Host "  Event: call_analyzed"
+Write-Host "Retell webhooks + calendar tools updated automatically."

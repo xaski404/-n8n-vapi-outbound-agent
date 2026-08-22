@@ -1,0 +1,61 @@
+﻿{
+    "webhooks":  {
+                     "check_availability":  "https://upgrade-speaks-ambassador-sally.trycloudflare.com/webhook/retell-check-availability",
+                     "book_appointment":  "https://upgrade-speaks-ambassador-sally.trycloudflare.com/webhook/retell-book-appointment",
+                     "call_analyzed":  "https://upgrade-speaks-ambassador-sally.trycloudflare.com/webhook/retell-call-analyzed"
+                 },
+    "phone_number":  "+48324412887",
+    "post_call_analysis_fields":  [
+                                      "outcome",
+                                      "sessions_per_week",
+                                      "preferred_session_date",
+                                      "booked_slot",
+                                      "goal",
+                                      "experience_level"
+                                  ],
+    "agent_id":  "agent_8d93c1c50313f224a2be084d2a",
+    "custom_functions":  [
+                             {
+                                 "method":  "POST",
+                                 "url":  "https://upgrade-speaks-ambassador-sally.trycloudflare.com/webhook/retell-check-availability",
+                                 "name":  "check_availability",
+                                 "description":  "Sprawdza wolne terminy na trening probny w kalendarzu studia.",
+                                 "parameters":  {
+                                                    "properties":  {
+                                                                       "preferred_day":  {
+                                                                                             "type":  "string",
+                                                                                             "description":  "Preferowany dzien tygodnia po polsku, np. czwartek"
+                                                                                         }
+                                                                   },
+                                                    "type":  "object"
+                                                }
+                             },
+                             {
+                                 "method":  "POST",
+                                 "url":  "https://upgrade-speaks-ambassador-sally.trycloudflare.com/webhook/retell-book-appointment",
+                                 "name":  "book_appointment",
+                                 "description":  "Rezerwuje termin treningu probnego w Google Calendar.",
+                                 "parameters":  {
+                                                    "properties":  {
+                                                                       "customer_name":  {
+                                                                                             "type":  "string",
+                                                                                             "description":  "Imie i nazwisko klienta"
+                                                                                         },
+                                                                       "slot_start":  {
+                                                                                          "type":  "string",
+                                                                                          "description":  "ISO datetime z check_availability"
+                                                                                      },
+                                                                       "notes":  {
+                                                                                     "type":  "string",
+                                                                                     "description":  "Opcjonalne notatki"
+                                                                                 }
+                                                                   },
+                                                    "type":  "object",
+                                                    "required":  [
+                                                                     "slot_start",
+                                                                     "customer_name"
+                                                                 ]
+                                                }
+                             }
+                         ]
+}

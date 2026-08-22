@@ -11,8 +11,9 @@ Write-Host "Stopping n8n..."
 docker stop n8n | Out-Null
 
 Write-Host "Clearing stuck executions in SQLite..."
+$clearSql = Join-Path $PSScriptRoot "_clear-running.sql"
 try {
-  docker run --rm -v "${vol}:/data" alpine sh -c "apk add --no-cache sqlite >/dev/null 2>&1 && sqlite3 /data/database.sqlite \"UPDATE execution_entity SET status='crashed', stoppedAt=datetime('now') WHERE status IN ('running','new','waiting');\"" | Out-Null
+  docker run --rm -v "${vol}:/data" -v "${clearSql}:/clear.sql" alpine sh -c "apk add --no-cache sqlite >/dev/null 2>&1 && sqlite3 /data/database.sqlite < /clear.sql" | Out-Null
 } catch {
   Write-Host "SQLite cleanup skipped"
 }

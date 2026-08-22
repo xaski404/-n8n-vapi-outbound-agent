@@ -28,16 +28,35 @@ function Get-PublicWebhookUrl {
 function Test-Tunnel([string]$BaseUrl) {
   if (-not $BaseUrl) { return $false }
   try {
-    $r = Invoke-WebRequest -Uri "$BaseUrl/healthz" -UseBasicParsing -TimeoutSec 15
-    return $r.StatusCode -eq 200
+    $health = Invoke-WebRequest -Uri "$BaseUrl/healthz" -UseBasicParsing -TimeoutSec 15
+    if ($health.StatusCode -ne 200) { return $false }
+    $body = '{"name":"check_availability","args":{"preferred_day":"czwartek"},"call":{"call_id":"watchdog"}}'
+    $cal = Invoke-WebRequest -Uri "$BaseUrl/webhook/retell-check-availability" -Method POST -Body $body -ContentType "application/json" -UseBasicParsing -TimeoutSec 20
+    return ($cal.StatusCode -eq 200 -and $cal.Content -match '"available"\s*:')
   } catch {
     return $false
   }
 }
 
+function Test-NamedTunnel {
+  $composeDir = Join-Path (Split-Path $proj -Parent) "projekt_z_n8n"
+  $config = Join-Path $composeDir "cloudflared\config.yml"
+  if (Test-Path $config) { return $true }
+  foreach ($line in Get-Content $envFile) {
+    if ($line -match '^CLOUDFLARE_TUNNEL_TOKEN=(.+)$' -and $Matches[1].Trim()) { return $true }
+  }
+  return $false
+}
+
 function Repair-Tunnel {
   $ts = Get-Date -Format "HH:mm:ss"
-  Write-Host "[$ts] Tunnel down - restarting cloudflared..."
+  if (Test-NamedTunnel) {
+    Write-Host "[$ts] Named tunnel — restarting cloudflared only (URL stays the same)"
+    docker restart cloudflared | Out-Null
+    Start-Sleep 12
+    return
+  }
+  Write-Host "[$ts] Quick tunnel down — restarting + syncing URL..."
   docker restart cloudflared | Out-Null
   Start-Sleep 18
   & powershell -ExecutionPolicy Bypass -File $syncScript
