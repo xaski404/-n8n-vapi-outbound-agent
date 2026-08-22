@@ -1,0 +1,14 @@
+{
+  "name": "check_availability",
+  "args": {
+    "preferred_day": "czwartek"
+  },
+  "call": {
+    "call_id": "test-check-availability-001",
+    "direction": "inbound",
+    "from_number": "+48100999888",
+    "retell_llm_dynamic_variables": {
+      "full_name": "Test Klient"
+    }
+  }
+}

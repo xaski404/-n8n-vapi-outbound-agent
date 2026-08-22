@@ -124,9 +124,17 @@ export interface VapiEndOfCallReport {
 
 /* ---------------------------- Google Sheets ---------------------------- */
 
-export type VoiceLeadStatus = 'zainteresowany' | 'niezainteresowany' | 'brak odpowiedzi';
+export type VoiceLeadStatus =
+  | 'zainteresowany'
+  | 'niezainteresowany'
+  | 'brak odpowiedzi'
+  | 'umówiono'
+  | 'odwołanie'
+  | 'przełożono';
+export type CallDirection = 'inbound' | 'outbound';
+export type LeadSource = 'inbound_call' | 'meta_lead_ad' | 'callback' | 'unknown';
 
-/** One row in the voice-leads spreadsheet (header row must match column order A–H). */
+/** One row in the voice-leads spreadsheet (A–H on the Leads tab). */
 export interface VoiceLeadSheetRow {
   phone: string;
   full_name: string;
@@ -136,4 +144,15 @@ export interface VoiceLeadSheetRow {
   transcript: string;
   sessions_per_week: string;
   preferred_session_date: string;
+  /** Used internally when mapping live booking sync; written to column H. */
+  booked_slot?: string;
+  /** Not written to sheet — kept for merge logic only. */
+  direction?: CallDirection | string;
+  source?: LeadSource | string;
+  goal?: string;
+  experience_level?: string;
+  updated_at?: string;
 }
+
+export { VOICE_LEAD_SHEET_COLUMNS } from './sheetColumns';
+

@@ -1,0 +1,17 @@
+{
+  "name": "book_appointment",
+  "args": {
+    "slot_start": "2026-08-21T10:00:00+02:00",
+    "customer_name": "Jan Testowy",
+    "notes": "E2E test — trening próbny"
+  },
+  "call": {
+    "call_id": "test-book-appointment-001",
+    "direction": "inbound",
+    "from_number": "+48100999888",
+    "retell_llm_dynamic_variables": {
+      "full_name": "Jan Testowy",
+      "phone_number": "+48100999888"
+    }
+  }
+}
