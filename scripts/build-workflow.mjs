@@ -304,22 +304,20 @@ function getAvailableSlots(config, busyBlocks, now, preferredDay, availabilityQu
     }
     return slots;
   }
+  var baseYmd = zonedParts(now, config.timezone).ymd;
   for (let dayOffset = 0; dayOffset <= config.daysAhead && slots.length < config.maxSlotsReturned; dayOffset++) {
-    const day = new Date(now);
-    day.setDate(day.getDate() + dayOffset);
-    const parts = zonedParts(day, config.timezone);
+    var ymd = addDaysToYmd(baseYmd, dayOffset);
+    const parts = zonedParts(wallClockToDate(ymd, 12, 0, config.timezone), config.timezone);
     const dow = parts.dow;
     if (config.workDays.indexOf(dow) === -1) continue;
-    if (preferredDateYmd && parts.ymd !== preferredDateYmd) continue;
+    if (preferredDateYmd && ymd !== preferredDateYmd) continue;
     if (preferredDows !== undefined && preferredDows.indexOf(dow) === -1) continue;
     if (skipOccurrences > 0 && preferredDows !== undefined) {
       dowOccurrence[dow] = (dowOccurrence[dow] || 0) + 1;
       if (dowOccurrence[dow] <= skipOccurrences) continue;
     }
     for (let hour = config.openHour; hour < config.closeHour; hour += 1) {
-      const slotStart = new Date(day);
-      slotStart.setHours(hour, 0, 0, 0);
-      pushSlot(slotStart);
+      pushSlot(wallClockToDate(ymd, hour, 0, config.timezone));
       if (slots.length >= config.maxSlotsReturned) break;
     }
   }
@@ -332,7 +330,7 @@ function formatAvailabilityResponse(slots, options) {
   var preferredTime = options.preferredTime;
   var periodLabels = { rano: 'rano', po_poludniu: 'po południu', wieczorem: 'wieczorem' };
   if (slots.length === 0) {
-    return { available: false, message: 'Brak wolnych terminów w podanym dniu. Spróbuj innego dnia.', slots: [] };
+    return { available: false, message: 'Brak wolnych terminów w tym dniu. Powiedz: „Niestety tego dnia nie mam już wolnych terminów.” i zapytaj jaki inny dzień klientowi pasuje — potem check_availability z nowym preferred_day lub preferred_date.', slots: [] };
   }
   if (preferredTime) {
     var exact = slots.find(function(s) { return slotMatchesPreferredTime(s, preferredTime, timezone); });
@@ -348,7 +346,7 @@ function formatAvailabilityResponse(slots, options) {
     return {
       available: true,
       exact_match: false,
-      message: 'O ' + timeLabel + ' brak wolnego terminu. Inne wolne godziny tego dnia: ' + slots.map(function(s) { return s.labelPl; }).join('; '),
+      message: 'O ' + timeLabel + ' brak wolnego terminu. Zaproponuj max 2–3 inne godziny tego samego dnia z slots[]. Gdy klientowi nie pasują — zapytaj jaki inny dzień mu odpowiada.',
       slots: mapSlotsForResponse(slots, timezone),
     };
   }
@@ -373,7 +371,8 @@ function formatAvailabilityResponse(slots, options) {
     available: true,
     preferred_time_of_day: period,
     preferred_period_available: false,
-    message: 'Brak wolnych terminów ' + periodLabels[period] + ' w tym dniu. Inne dostępne godziny tego samego dnia: ' + slots.map(function(s) { return s.labelPl; }).join('; '),
+    same_day_alternatives: true,
+    message: 'Brak terminów ' + periodLabels[period] + ' w tym dniu. Powiedz to klientowi i zaproponuj max 2–3 inne godziny TEGO SAMEGO dnia z slots[]. Gdy żadna nie pasuje — zapytaj jaki inny dzień mu odpowiada.',
     slots: mapSlotsForResponse(slots, timezone),
   };
 }
@@ -426,6 +425,29 @@ function buildCalendarEvent(booking, config) {
 function normalizePhone(phone) {
   return (phone || '').replace(/\\s/g, '').trim();
 }
+function phoneDigits(phone) {
+  return (phone || '').replace(/\\D/g, '');
+}
+function phonesMatch(a, b) {
+  var da = phoneDigits(a);
+  var db = phoneDigits(b);
+  if (!da || !db) return false;
+  if (da === db) return true;
+  if (da.length >= 9 && db.length >= 9 && da.slice(-9) === db.slice(-9)) return true;
+  return false;
+}
+function phoneSearchVariants(phone) {
+  var normalized = normalizePhone(phone);
+  var digits = phoneDigits(phone);
+  var variants = {};
+  if (normalized) variants[normalized] = true;
+  if (digits) {
+    variants[digits] = true;
+    if (digits.indexOf('48') === 0 && digits.length >= 11) variants['+' + digits] = true;
+    if (digits.length >= 9) variants[digits.slice(-9)] = true;
+  }
+  return Object.keys(variants);
+}
 const WEEKDAY_TO_DOW = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 function zonedParts(date, timezone) {
   const weekday = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'short' }).format(date);
@@ -433,6 +455,10 @@ function zonedParts(date, timezone) {
   const hour = parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: timezone, hour: '2-digit', hour12: false }).format(date), 10);
   const minute = parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: timezone, minute: '2-digit' }).format(date), 10);
   return { dow: WEEKDAY_TO_DOW[weekday] != null ? WEEKDAY_TO_DOW[weekday] : date.getDay(), hour: hour, minute: minute, ymd: ymd };
+}
+function addDaysToYmd(ymd, days) {
+  var parts = ymd.split('-').map(function(v) { return parseInt(v, 10); });
+  return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + days)).toISOString().slice(0, 10);
 }
 function wallClockToDate(ymd, hour, minute, timezone) {
   const parts = ymd.split('-').map(function(v) { return parseInt(v, 10); });
@@ -508,9 +534,8 @@ function buildEventsListUrl(calendarId, phone, slotStart, config, now) {
   }
   var qs = 'timeMin=' + encodeURIComponent(timeMinVal)
     + '&timeMax=' + encodeURIComponent(timeMaxVal)
-    + '&singleEvents=true&orderBy=startTime&maxResults=50';
-  var normalizedPhone = normalizePhone(phone);
-  if (normalizedPhone) qs += '&q=' + encodeURIComponent(normalizedPhone);
+    + '&singleEvents=true&orderBy=startTime&maxResults=250'
+    + '&fields=' + encodeURIComponent('items(id,summary,description,start,end,extendedProperties)');
   return 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(calendarId) + '/events?' + qs;
 }
 function eventStartMs(event) {
@@ -525,8 +550,15 @@ function eventMatchesCustomer(event, phone, customerName) {
     return stripDiacritics(t);
   }).filter(function(t) { return t.length > 2; });
   const privPhone = event.extendedProperties && event.extendedProperties.private && event.extendedProperties.private.customer_phone;
-  if (privPhone && normalizePhone(privPhone) === normalizedPhone) return true;
-  if (event.description && normalizedPhone && event.description.indexOf(normalizedPhone) >= 0) return true;
+  if (privPhone && phonesMatch(privPhone, phone)) return true;
+  var telMatch = event.description && event.description.match(/Telefon:\\s*([+\\d\\s()-]+)/i);
+  if (telMatch && phonesMatch(telMatch[1], phone)) return true;
+  if (event.description) {
+    var descDigits = phoneDigits(event.description);
+    var want = phoneDigits(phone);
+    if (want && (descDigits.indexOf(want) >= 0 || (want.length >= 9 && descDigits.indexOf(want.slice(-9)) >= 0))) return true;
+  }
+  if (normalizedPhone && event.description && event.description.indexOf(normalizedPhone) >= 0) return true;
   if (nameTokens.length > 0) {
     const hay = stripDiacritics(((event.summary || '') + ' ' + (event.description || '')).toLowerCase());
     for (let i = 0; i < nameTokens.length; i++) {
@@ -564,7 +596,11 @@ function formatListAppointmentsResponse(listResponse, phone, customerName, confi
   const refNow = now || new Date();
   const tz = (config && config.timezone) || 'Europe/Warsaw';
   const limit = maxReturned || 12;
-  const items = (listResponse.items || []).filter(function(event) {
+  if (listResponse.error && listResponse.error.message) {
+    return { found: false, message: 'Błąd kalendarza: ' + listResponse.error.message, appointments: [] };
+  }
+  const rawItems = listResponse.items || [];
+  const items = rawItems.filter(function(event) {
     return eventMatchesCustomer(event, phone, customerName);
   });
   const upcoming = selectAppointmentsForList(items.map(function(event) {
@@ -1231,6 +1267,14 @@ const formatCancelAckCode = `try {
 const formatBookAckCode = `try {
   const validated = $('Validate Booking').first().json;
   const created = items[0]?.json || {};
+  const apiErr = created.error || (created.code && created.code >= 400 ? created : null);
+  if (apiErr) {
+    const msg = (apiErr.message || (apiErr.error && apiErr.error.message) || 'Nie udało się zapisać wizyty w kalendarzu Google.');
+    return [{ json: { success: false, message: msg } }];
+  }
+  if (!created.id) {
+    return [{ json: { success: false, message: 'Kalendarz nie zwrócił potwierdzenia rezerwacji — sprawdź poświadczenia Google Calendar w n8n.' } }];
+  }
   return [{ json: {
     success: true,
     message: validated.message || 'Termin zapisany',
@@ -2051,6 +2095,10 @@ const wf = {
     'Format Book Ack': {
       main: [[
         { node: 'Ack Booking OK', type: 'main', index: 0 },
+      ]],
+    },
+    'Ack Booking OK': {
+      main: [[
         { node: 'Build Book Sheets Row', type: 'main', index: 0 },
       ]],
     },
@@ -2089,6 +2137,10 @@ const wf = {
     'Format Cancel Ack': {
       main: [[
         { node: 'Ack Cancel OK', type: 'main', index: 0 },
+      ]],
+    },
+    'Ack Cancel OK': {
+      main: [[
         { node: 'Build Cancel Sheets Row', type: 'main', index: 0 },
       ]],
     },
@@ -2125,6 +2177,10 @@ const wf = {
     'Format Reschedule Ack': {
       main: [[
         { node: 'Ack Reschedule OK', type: 'main', index: 0 },
+      ]],
+    },
+    'Ack Reschedule OK': {
+      main: [[
         { node: 'Build Reschedule Sheets Row', type: 'main', index: 0 },
       ]],
     },

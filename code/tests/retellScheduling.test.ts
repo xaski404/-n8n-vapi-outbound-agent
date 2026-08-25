@@ -108,7 +108,8 @@ describe('retellScheduling', () => {
     const resp = formatAvailabilityResponse(slots, { preferredTimeOfDay: 'rano' });
     assert.equal(resp.preferred_period_available, false);
     assert.equal((resp.slots as unknown[]).length, 2);
-    assert.match(String(resp.message), /Inne dostępne godziny tego samego dnia/i);
+    assert.match(String(resp.message), /TEGO SAMEGO dnia/i);
+    assert.equal(resp.same_day_alternatives, true);
   });
 
   it('filterSlotsByTimeOfDay keeps afternoon hours only', () => {
@@ -155,6 +156,27 @@ describe('retellScheduling', () => {
     assert.ok(slots.length > 0);
     for (const slot of slots) {
       assert.match(slot.labelPl.toLowerCase(), /wtorek|środa/);
+    }
+  });
+
+  it('getAvailableSlots returns correct weekday when server runs in UTC (Docker n8n)', () => {
+    const now = new Date('2026-08-22T23:16:08.615Z');
+    const query = parseAvailabilityQuery('środa', undefined, now);
+    const slots = getAvailableSlots(defaultStudioConfig(), [], now, undefined, query);
+    assert.ok(slots.length > 0);
+    for (const slot of slots) {
+      assert.match(slot.labelPl.toLowerCase(), /środa/);
+      assert.doesNotMatch(slot.labelPl.toLowerCase(), /wtorek/);
+    }
+  });
+
+  it('getAvailableSlots maps piątek to Friday slots in UTC environment', () => {
+    const now = new Date('2026-08-22T23:16:08.615Z');
+    const query = parseAvailabilityQuery('piątek', undefined, now);
+    const slots = getAvailableSlots(defaultStudioConfig(), [], now, undefined, query);
+    assert.ok(slots.length > 0);
+    for (const slot of slots) {
+      assert.match(slot.labelPl.toLowerCase(), /piątek/);
     }
   });
 
@@ -312,6 +334,15 @@ describe('retellScheduling', () => {
     assert.equal(match?.id, 'evt-jakub');
   });
 
+  it('buildEventsListUrl fetches broad list for client-side phone match', () => {
+    const now = new Date('2026-08-19T10:41:29+02:00');
+    const url = buildEventsListUrl('primary', '+48799839938', undefined, defaultStudioConfig(), now);
+    assert.match(url, /calendars/);
+    assert.doesNotMatch(url, /[?&]q=/);
+    assert.match(url, /maxResults=250/);
+    assert.match(url, /fields=/);
+  });
+
   it('buildEventsListUrl uses forward window when slot is in the past', () => {
     const now = new Date('2026-08-19T10:41:29+02:00');
     const url = buildEventsListUrl(
@@ -322,10 +353,33 @@ describe('retellScheduling', () => {
       now,
     );
     assert.match(url, /calendars/);
-    assert.match(url, /q=%2B48799839938/);
+    assert.doesNotMatch(url, /[?&]q=/);
     const timeMin = decodeURIComponent(url.match(/timeMin=([^&]+)/)?.[1] ?? '');
     const timeMax = decodeURIComponent(url.match(/timeMax=([^&]+)/)?.[1] ?? '');
     assert.ok(new Date(timeMax).getTime() >= new Date(timeMin).getTime());
+  });
+
+  it('formatListAppointmentsResponse matches phone stored without country prefix', () => {
+    const now = new Date('2026-08-19T10:00:00+02:00');
+    const cfg = defaultStudioConfig();
+    const list = formatListAppointmentsResponse(
+      {
+        items: [
+          {
+            id: 'evt-local',
+            summary: 'Trening — Jan',
+            start: { dateTime: '2026-08-21T11:00:00+02:00' },
+            description: 'Telefon: 799839938',
+          },
+        ],
+      },
+      '+48799839938',
+      undefined,
+      cfg,
+      now,
+    );
+    assert.equal(list.found, true);
+    assert.equal((list.appointments as unknown[]).length, 1);
   });
 
   it('buildCalendarEvent uses trial label for outbound', () => {
