@@ -8,7 +8,14 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { calendarTool, patchEndCallTool } from './retell-inbound-tools.mjs';
+import {
+  BOOK_APPOINTMENT_TOOL_DESCRIPTION,
+  CANCEL_APPOINTMENT_TOOL_DESCRIPTION,
+  LIST_MY_APPOINTMENTS_TOOL_DESCRIPTION,
+  RESCHEDULE_APPOINTMENT_TOOL_DESCRIPTION,
+  calendarTool,
+  patchEndCallTool,
+} from './retell-inbound-tools.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const envFile = join(root, '.env');
@@ -43,14 +50,26 @@ function patchToolUrls(tools, base) {
     type: 'object',
     properties: {
       slot_start: { type: 'string', description: 'Skopiuj DOKLADNIE pole start z wybranego obiektu slots[] z check_availability — NIE licz ISO z godziny' },
-      customer_name: { type: 'string', description: 'Imie i nazwisko klienta (potwierdzone)' },
+      customer_name: {
+        type: 'string',
+        description: 'Imię i nazwisko klienta — klient podaje oba w rozmowie.',
+      },
       conversation_summary: {
         type: 'string',
-        description: 'Krotkie podsumowanie rozmowy: cel, doswiadczenie, ustalenia, pytania klienta',
+        description: 'Krótkie podsumowanie rozmowy. Przy treningu próbnym: cel, doświadczenie, ustalenia. Przy zwykłym umówieniu: dzień, godzina, ewentualne pytania.',
       },
-      goal: { type: 'string', description: 'Cel treningowy klienta' },
-      experience_level: { type: 'string', description: 'poczatkujacy / srednio / zaawansowany' },
-      sessions_per_week: { type: 'string', description: 'Ile razy w tygodniu klient chce trenowac' },
+      goal: {
+        type: 'string',
+        description: 'Cel treningowy — WYMAGANE przy bezpłatnym treningu próbnym, opcjonalnie przy zwykłym umówieniu.',
+      },
+      experience_level: {
+        type: 'string',
+        description: 'początkujący / średnio / zaawansowany — WYMAGANE przy treningu próbnym.',
+      },
+      sessions_per_week: {
+        type: 'string',
+        description: 'Ile razy w tygodniu — WYMAGANE przy treningu próbnym.',
+      },
       notes: { type: 'string', description: 'Dodatkowe notatki (opcjonalnie)' },
     },
     required: ['slot_start', 'customer_name', 'conversation_summary'],
@@ -59,9 +78,15 @@ function patchToolUrls(tools, base) {
   const cancelParams = {
     type: 'object',
     properties: {
-      customer_name: { type: 'string', description: 'Imie i nazwisko klienta' },
-      slot_start: { type: 'string', description: 'ISO datetime odwolywanej wizyty — skopiuj start z list_my_appointments (nie licz recznie)' },
-      reason: { type: 'string', description: 'Krotki powod odwolania (opcjonalnie)' },
+      customer_name: {
+        type: 'string',
+        description: 'Imię i nazwisko klienta — klient MUSI podać oba w rozmowie (weryfikacja tożsamości). NIE czytaj z systemu.',
+      },
+      slot_start: {
+        type: 'string',
+        description: 'Skopiuj DOKŁADNIE pole slot_start z wybranego obiektu appointments[] z list_my_appointments. NIE licz ISO ręcznie.',
+      },
+      reason: { type: 'string', description: 'Krótki powód odwołania (opcjonalnie).' },
     },
     required: ['customer_name', 'slot_start'],
   };
@@ -69,16 +94,22 @@ function patchToolUrls(tools, base) {
   const rescheduleParams = {
     type: 'object',
     properties: {
-      customer_name: { type: 'string', description: 'Imie i nazwisko klienta' },
-      old_slot_start: { type: 'string', description: 'ISO datetime obecnej wizyty — skopiuj start z list_my_appointments' },
-      new_slot_start: { type: 'string', description: 'Skopiuj DOKLADNIE pole start z wybranego obiektu slots[] z check_availability — NIE licz ISO z godziny' },
+      customer_name: {
+        type: 'string',
+        description: 'Imię i nazwisko klienta — klient MUSI podać oba w rozmowie (weryfikacja tożsamości). NIE czytaj z systemu.',
+      },
+      old_slot_start: {
+        type: 'string',
+        description: 'Stara wizyta — skopiuj DOKŁADNIE pole slot_start z wybranego obiektu appointments[] z list_my_appointments. NIE licz ISO ręcznie.',
+      },
+      new_slot_start: {
+        type: 'string',
+        description: 'Nowy termin — skopiuj DOKŁADNIE pole start z wybranego obiektu slots[] z check_availability. NIE licz ISO ręcznie.',
+      },
       conversation_summary: {
         type: 'string',
-        description: 'Krotkie podsumowanie: powod zmiany, ustalenia',
+        description: 'Opcjonalnie: krótkie podsumowanie rozmowy (np. z piątku 15 na środę 12).',
       },
-      goal: { type: 'string', description: 'Cel treningowy (opcjonalnie)' },
-      experience_level: { type: 'string', description: 'poczatkujacy / srednio / zaawansowany' },
-      sessions_per_week: { type: 'string', description: 'Treningi w tygodniu (opcjonalnie)' },
     },
     required: ['customer_name', 'old_slot_start', 'new_slot_start'],
   };
@@ -100,7 +131,8 @@ function patchToolUrls(tools, base) {
           },
           preferred_time_of_day: {
             type: 'string',
-            description: 'Preferowana pora: rano, po_poludniu lub wieczorem. Gdy brak wolnych w tej porze, backend zwraca inne godziny tego samego dnia.',
+            description:
+              'Pora dnia: rano, po_poludniu lub wieczorem (ze underscore). Gdy brak w tej porze, ale są inne godziny tego dnia — backend zwraca same_day_alternatives:true. Najpierw zaproponuj max 2–3 inne godziny TEGO SAMEGO dnia. Gdy klientowi nie pasują — zapytaj jaki inny dzień mu odpowiada. Gdy cały dzień pełny (available:false) — powiedz że tego dnia nie ma terminów i zapytaj o inny dzień.',
           },
         },
       },
@@ -109,7 +141,7 @@ function patchToolUrls(tools, base) {
     book_appointment: calendarTool(
       base,
       'book_appointment',
-      'Rezerwuje NOWY termin treningu. TYLKO gdy klient chce umowic/zapisac sie na trening. NIE uzywaj gdy klient chce przelozyc, przesunac lub odwolac wizyte. Po successful:true powiedz glosnie potwierdzenie i zapytaj czy mozesz jeszcze pomoc.',
+      BOOK_APPOINTMENT_TOOL_DESCRIPTION,
       `${base}/webhook/retell-book-appointment`,
       bookParams,
       'Zapisuję termin.',
@@ -118,7 +150,7 @@ function patchToolUrls(tools, base) {
     list_my_appointments: calendarTool(
       base,
       'list_my_appointments',
-      'Pobiera nadchodzace wizyty klienta po numerze telefonu. WYWOŁAJ NATYCHMIAST gdy klient chce odwołać, przełożyć lub przesunąć wizytę — przed pytaniem o nowy termin.',
+      LIST_MY_APPOINTMENTS_TOOL_DESCRIPTION,
       `${base}/webhook/retell-list-appointments`,
       {
         type: 'object',
@@ -131,7 +163,7 @@ function patchToolUrls(tools, base) {
     cancel_appointment: calendarTool(
       base,
       'cancel_appointment',
-      'Odwołuje wizytę klienta w Google Calendar. Odpowiedz JSON z success:true i label po sukcesie. Po successful:true powiedz glosnie potwierdzenie i zapytaj czy mozesz jeszcze pomoc.',
+      CANCEL_APPOINTMENT_TOOL_DESCRIPTION,
       `${base}/webhook/retell-cancel-appointment`,
       cancelParams,
       'Odwołuję wizytę.',
@@ -140,7 +172,7 @@ function patchToolUrls(tools, base) {
     reschedule_appointment: calendarTool(
       base,
       'reschedule_appointment',
-      'Przekłada wizytę klienta na nowy termin w Google Calendar. Odpowiedz JSON z success:true i label po sukcesie. Po successful:true powiedz glosnie potwierdzenie i zapytaj czy mozesz jeszcze pomoc.',
+      RESCHEDULE_APPOINTMENT_TOOL_DESCRIPTION,
       `${base}/webhook/retell-reschedule-appointment`,
       rescheduleParams,
       'Przekładam termin.',

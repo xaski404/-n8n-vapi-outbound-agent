@@ -547,14 +547,14 @@ export function getAvailableSlots(
     return slots;
   }
 
+  const baseYmd = zonedParts(now, config.timezone).ymd;
   for (let dayOffset = 0; dayOffset <= config.daysAhead && slots.length < config.maxSlotsReturned; dayOffset++) {
-    const day = new Date(now);
-    day.setDate(day.getDate() + dayOffset);
-    const parts = zonedParts(day, config.timezone);
+    const ymd = addDaysToYmd(baseYmd, dayOffset);
+    const parts = zonedParts(wallClockToDate(ymd, 12, 0, config.timezone), config.timezone);
     const dow = parts.dow;
 
     if (!config.workDays.includes(dow)) continue;
-    if (preferredDateYmd && parts.ymd !== preferredDateYmd) continue;
+    if (preferredDateYmd && ymd !== preferredDateYmd) continue;
     if (preferredDows !== undefined && !preferredDows.includes(dow)) continue;
     if (skipOccurrences > 0 && preferredDows !== undefined) {
       dowOccurrence[dow] = (dowOccurrence[dow] ?? 0) + 1;
@@ -564,10 +564,7 @@ export function getAvailableSlots(
     for (let hour = config.openHour; hour < config.closeHour; hour += config.slotStepMinutes / 60) {
       const h = Math.floor(hour);
       const m = Math.round((hour - h) * 60);
-
-      const slotStart = new Date(day);
-      slotStart.setHours(h, m, 0, 0);
-      pushSlot(slotStart);
+      pushSlot(wallClockToDate(ymd, h, m, config.timezone));
       if (slots.length >= config.maxSlotsReturned) break;
     }
   }
@@ -608,6 +605,34 @@ export function normalizePhone(phone: string): string {
   return phone.replace(/\s/g, '').trim();
 }
 
+/** Digits-only phone for fuzzy matching (+48… vs 48… vs local 9 digits). */
+export function phoneDigits(phone: string): string {
+  return (phone || '').replace(/\D/g, '');
+}
+
+function phonesMatch(a: string, b: string): boolean {
+  const da = phoneDigits(a);
+  const db = phoneDigits(b);
+  if (!da || !db) return false;
+  if (da === db) return true;
+  if (da.length >= 9 && db.length >= 9 && da.slice(-9) === db.slice(-9)) return true;
+  return false;
+}
+
+/** Common stored/search forms for customer_phone (+48…, digits-only, local 9). */
+export function phoneSearchVariants(phone: string): string[] {
+  const normalized = normalizePhone(phone);
+  const digits = phoneDigits(phone);
+  const variants = new Set<string>();
+  if (normalized) variants.add(normalized);
+  if (digits) {
+    variants.add(digits);
+    if (digits.startsWith('48') && digits.length >= 11) variants.add(`+${digits}`);
+    if (digits.length >= 9) variants.add(digits.slice(-9));
+  }
+  return [...variants];
+}
+
 const WEEKDAY_TO_DOW: Record<string, number> = {
   Sun: 0,
   Mon: 1,
@@ -635,6 +660,11 @@ function zonedParts(date: Date, timezone: string): { dow: number; hour: number; 
     10,
   );
   return { dow: WEEKDAY_TO_DOW[weekday] ?? date.getDay(), hour, minute, ymd };
+}
+
+function addDaysToYmd(ymd: string, days: number): string {
+  const [year, month, day] = ymd.split('-').map((part) => parseInt(part, 10));
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
 }
 
 function wallClockToDate(ymd: string, hour: number, minute: number, timezone: string): Date {
@@ -758,13 +788,11 @@ export function buildEventsListUrl(
   let qs =
     `timeMin=${encodeURIComponent(timeMin)}` +
     `&timeMax=${encodeURIComponent(timeMax.toISOString())}` +
-    `&singleEvents=true&orderBy=startTime&maxResults=50`;
+    `&singleEvents=true&orderBy=startTime&maxResults=250` +
+    `&fields=${encodeURIComponent('items(id,summary,description,start,end,extendedProperties)')}`;
 
-  const normalizedPhone = normalizePhone(phone);
-  if (normalizedPhone) {
-    qs += `&q=${encodeURIComponent(normalizedPhone)}`;
-  }
-
+  // Client-side phone matching (phonesMatch) — do not use Google q= here; it skips
+  // events whose phone lives only in extendedProperties.private.customer_phone.
   return `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${qs}`;
 }
 
@@ -826,10 +854,17 @@ function eventMatchesCustomer(
     .filter((t) => t.length > 2);
 
   const privPhone = event.extendedProperties?.private?.customer_phone;
-  if (privPhone && normalizePhone(privPhone) === normalizedPhone) return true;
-  if (event.description && normalizedPhone && event.description.includes(normalizedPhone)) {
-    return true;
+  if (privPhone && phonesMatch(privPhone, phone)) return true;
+  const telLine = event.description?.match(/Telefon:\s*([+\d\s()-]+)/i)?.[1];
+  if (telLine && phonesMatch(telLine, phone)) return true;
+  if (event.description) {
+    const descDigits = phoneDigits(event.description);
+    const want = phoneDigits(phone);
+    if (want && (descDigits.includes(want) || (want.length >= 9 && descDigits.includes(want.slice(-9))))) {
+      return true;
+    }
   }
+  if (normalizedPhone && event.description?.includes(normalizedPhone)) return true;
   if (nameTokens.length > 0) {
     const hay = stripDiacritics(`${event.summary ?? ''} ${event.description ?? ''}`.toLowerCase());
     if (nameTokens.some((t) => hay.includes(t))) return true;
@@ -884,9 +919,16 @@ export function formatListAppointmentsResponse(
   now: Date = new Date(),
   maxReturned = 12,
 ): Record<string, unknown> {
-  const items = ((listResponse.items as CalendarListEvent[] | undefined) ?? []).filter((event) =>
-    eventMatchesCustomer(event, phone, customerName),
-  );
+  if ((listResponse as { error?: { message?: string } }).error?.message) {
+    return {
+      found: false,
+      message: `Błąd kalendarza: ${(listResponse as { error: { message: string } }).error.message}`,
+      appointments: [],
+    };
+  }
+
+  const rawItems = (listResponse.items as CalendarListEvent[] | undefined) ?? [];
+  const items = rawItems.filter((event) => eventMatchesCustomer(event, phone, customerName));
 
   const upcoming = selectAppointmentsForList(
     items
@@ -1001,7 +1043,7 @@ export function formatAvailabilityResponse(
     return {
       available: false,
       message:
-        'Brak wolnych terminów w podanym dniu. Sprawdź ponownie check_availability z preferred_date (np. 2026-08-28) albo preferred_day (np. kolejny piątek).',
+        'Brak wolnych terminów w tym dniu. Powiedz: „Niestety tego dnia nie mam już wolnych terminów.” i zapytaj jaki inny dzień klientowi pasuje — potem check_availability z nowym preferred_day lub preferred_date.',
       slots: [],
     };
   }
@@ -1020,7 +1062,7 @@ export function formatAvailabilityResponse(
     return {
       available: true,
       exact_match: false,
-      message: `O ${timeLabel} brak wolnego terminu. Inne wolne godziny tego dnia: ${slots.map((s) => s.labelPl).join('; ')}`,
+      message: `O ${timeLabel} brak wolnego terminu. Zaproponuj max 2–3 inne godziny tego samego dnia z slots[]. Gdy klientowi nie pasują — zapytaj jaki inny dzień mu odpowiada.`,
       slots: mapSlotsForResponse(slots, timezone),
     };
   }
@@ -1049,7 +1091,8 @@ export function formatAvailabilityResponse(
     available: true,
     preferred_time_of_day: period,
     preferred_period_available: false,
-    message: `Brak wolnych terminów ${periodLabel} w tym dniu. Inne dostępne godziny tego samego dnia: ${slots.map((s) => s.labelPl).join('; ')}`,
+    same_day_alternatives: true,
+    message: `Brak terminów ${periodLabel} w tym dniu. Powiedz to klientowi i zaproponuj max 2–3 inne godziny TEGO SAMEGO dnia z slots[]. Gdy żadna nie pasuje — zapytaj jaki inny dzień mu odpowiada.`,
     slots: mapSlotsForResponse(slots, timezone),
   };
 }
