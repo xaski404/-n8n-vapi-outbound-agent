@@ -2,3 +2,5 @@
 node_modules/
 code/dist/
 *.log
+.specstory/
+_fix_prompt.py

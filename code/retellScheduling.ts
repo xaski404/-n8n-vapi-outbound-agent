@@ -45,6 +45,7 @@ export interface BookingRequest {
   experienceLevel?: string;
   sessionsPerWeek?: string;
   conversationSummary?: string;
+  callSummary?: string;
   direction?: 'inbound' | 'outbound' | string;
   campaignName?: string;
   callId?: string | null;
@@ -166,6 +167,19 @@ export function parsePreferredDate(
   const raw = input.trim();
   if (!raw) return undefined;
 
+  const lower = raw.toLowerCase();
+
+  if (/\bjutro\b|\btomorrow\b/i.test(lower)) {
+    return addDaysToYmd(zonedParts(now, timezone).ymd, 1);
+  }
+  if (/\bpojutrze\b/i.test(lower)) {
+    return addDaysToYmd(zonedParts(now, timezone).ymd, 2);
+  }
+  if (/(?:nast[eę]pn|kolejn|next).*(?:dzie[nń]|dnia|day)/i.test(lower) ||
+      /(?:dzie[nń]|dnia).*(?:p[oó][zź]niej|potem|dalej|later)/i.test(lower)) {
+    return addDaysToYmd(zonedParts(now, timezone).ymd, 1);
+  }
+
   const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
 
@@ -254,6 +268,25 @@ export function parseAvailabilityQuery(
   return query;
 }
 
+/** Narrow Google freeBusy window — a 42-day query is the main source of calendar lag. */
+export function freeBusyTimeRange(
+  now: Date,
+  query: AvailabilityQuery,
+  config: StudioScheduleConfig,
+): { timeMin: string; timeMax: string } {
+  const tz = config.timezone;
+  if (query.preferredDateYmd) {
+    const start = wallClockToDate(query.preferredDateYmd, 0, 0, tz);
+    const timeMinDate = start.getTime() < now.getTime() ? now : start;
+    const end = wallClockToDate(addDaysToYmd(query.preferredDateYmd, 1), 0, 0, tz);
+    return { timeMin: timeMinDate.toISOString(), timeMax: end.toISOString() };
+  }
+  const days = query.preferredDows ? 16 : Math.min(config.daysAhead, 14);
+  const timeMax = new Date(now);
+  timeMax.setDate(timeMax.getDate() + days);
+  return { timeMin: now.toISOString(), timeMax: timeMax.toISOString() };
+}
+
 export type TimeOfDay = 'rano' | 'po_poludniu' | 'wieczorem';
 
 const TIME_OF_DAY_LABELS: Record<TimeOfDay, string> = {
@@ -287,6 +320,88 @@ const POLISH_HOUR_WORDS: Record<string, number> = {
   dziewietnasta: 19,
   dwudziesta: 20,
 };
+
+const POLISH_HOUR_NOMINATIVE: Record<number, string> = {
+  0: 'północ',
+  1: 'pierwsza',
+  2: 'druga',
+  3: 'trzecia',
+  4: 'czwarta',
+  5: 'piąta',
+  6: 'szósta',
+  7: 'siódma',
+  8: 'ósma',
+  9: 'dziewiąta',
+  10: 'dziesiąta',
+  11: 'jedenasta',
+  12: 'dwunasta',
+  13: 'trzynasta',
+  14: 'czternasta',
+  15: 'piętnasta',
+  16: 'szesnasta',
+  17: 'siedemnasta',
+  18: 'osiemnasta',
+  19: 'dziewiętnasta',
+  20: 'dwudziesta',
+  21: 'dwudziesta pierwsza',
+  22: 'dwudziesta druga',
+  23: 'dwudziesta trzecia',
+};
+
+const POLISH_HOUR_LOCATIVE: Record<number, string> = {
+  0: 'północy',
+  1: 'pierwszej',
+  2: 'drugiej',
+  3: 'trzeciej',
+  4: 'czwartej',
+  5: 'piątej',
+  6: 'szóstej',
+  7: 'siódmej',
+  8: 'ósmej',
+  9: 'dziewiątej',
+  10: 'dziesiątej',
+  11: 'jedenastej',
+  12: 'dwunastej',
+  13: 'trzynastej',
+  14: 'czternastej',
+  15: 'piętnastej',
+  16: 'szesnastej',
+  17: 'siedemnastej',
+  18: 'osiemnastej',
+  19: 'dziewiętnastej',
+  20: 'dwudziestej',
+  21: 'dwudziestej pierwszej',
+  22: 'dwudziestej drugiej',
+  23: 'dwudziestej trzeciej',
+};
+
+/** Polish clock time for speech — feminine nominative (dwunasta) or locative (o dwunastej). */
+export function formatHourSpeechPl(
+  hour: number,
+  minute = 0,
+  form: 'nominative' | 'locative' = 'nominative',
+): string {
+  const hourWord =
+    form === 'locative'
+      ? (POLISH_HOUR_LOCATIVE[hour] ?? `${hour}:00`)
+      : (POLISH_HOUR_NOMINATIVE[hour] ?? `${hour}:00`);
+  if (minute === 0) return hourWord;
+  const minuteWords: Record<number, string> = {
+    5: 'pięć',
+    10: 'dziesięć',
+    15: 'piętnaście',
+    20: 'dwadzieścia',
+    25: 'dwadzieścia pięć',
+    30: 'trzydzieści',
+    35: 'trzydzieści pięć',
+    40: 'czterdzieści',
+    45: 'czterdzieści pięć',
+    50: 'pięćdziesiąt',
+    55: 'pięćdziesiąt pięć',
+  };
+  const minuteWord = minuteWords[minute] ?? String(minute);
+  return `${hourWord} ${minuteWord}`;
+}
 
 /** Parse concrete clock time, e.g. 12:00, 15, dwunasta, o pietnastej. */
 export function parsePreferredTime(input?: string | null): { hour: number; minute: number } | undefined {
@@ -412,16 +527,15 @@ export function resolveAgentSlotStart(
 }
 
 function formatSlotLabel(start: Date, timezone: string): string {
-  const fmt = new Intl.DateTimeFormat('pl-PL', {
+  const parts = zonedParts(start, timezone);
+  const datePart = new Intl.DateTimeFormat('pl-PL', {
     timeZone: timezone,
     weekday: 'long',
     day: 'numeric',
     month: 'long',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-  return fmt.format(start);
+  }).format(start);
+  const timePart = formatHourSpeechPl(parts.hour, parts.minute, 'nominative');
+  return `${datePart}, ${timePart}`;
 }
 
 function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
@@ -878,36 +992,14 @@ export function slotLabelFromIso(iso: string, timezone: string): string {
   return formatSlotLabel(date, timezone);
 }
 
-/** Prefer appointments across days so test duplicates on one day do not hide Friday etc. */
+/** All upcoming appointments for the caller, chronological. No per-day cap. */
 export function selectAppointmentsForList<T extends { startMs: number }>(
   rows: T[],
-  timezone: string,
-  maxTotal = 12,
-  maxPerDay = 2,
+  _timezone?: string,
+  _maxTotal?: number,
+  _maxPerDay?: number,
 ): T[] {
-  const sorted = [...rows].sort((a, b) => a.startMs - b.startMs);
-  const byDay = new Map<string, T[]>();
-  for (const row of sorted) {
-    const day = zonedParts(new Date(row.startMs), timezone).ymd;
-    if (!byDay.has(day)) byDay.set(day, []);
-    byDay.get(day)!.push(row);
-  }
-  if (byDay.size <= 1) {
-    return sorted.slice(0, maxTotal);
-  }
-
-  const days = [...byDay.keys()].sort();
-  const selected: T[] = [];
-  for (let round = 0; round < maxPerDay && selected.length < maxTotal; round++) {
-    for (const day of days) {
-      const dayRows = byDay.get(day)!;
-      if (round < dayRows.length) {
-        selected.push(dayRows[round]);
-        if (selected.length >= maxTotal) break;
-      }
-    }
-  }
-  return selected.sort((a, b) => a.startMs - b.startMs);
+  return [...rows].sort((a, b) => a.startMs - b.startMs);
 }
 
 /** Upcoming appointments for caller phone (cancel/reschedule disambiguation). */
@@ -917,7 +1009,6 @@ export function formatListAppointmentsResponse(
   customerName: string | undefined,
   config: StudioScheduleConfig,
   now: Date = new Date(),
-  maxReturned = 12,
 ): Record<string, unknown> {
   if ((listResponse as { error?: { message?: string } }).error?.message) {
     return {
@@ -935,8 +1026,6 @@ export function formatListAppointmentsResponse(
       .map((event) => ({ event, startMs: eventStartMs(event)! }))
       .filter((row) => row.startMs != null && row.startMs >= now.getTime() - 60_000),
     config.timezone,
-    maxReturned,
-    2,
   );
 
   const appointments = upcoming.map(({ event }) => {
@@ -972,10 +1061,7 @@ export function formatListAppointmentsResponse(
   let message: string;
   if (byDay.size === 1) {
     const [day, hours] = [...byDay.entries()][0];
-    message =
-      hours.length > 3
-        ? `${hours.length} wizyt w ${day} — podaj godzinę wizyty do przesunięcia`
-        : `Wizyty w ${day}: ${hours.join(', ')}`;
+    message = `Wizyty w ${day}: ${hours.join(', ')}`;
   } else {
     message = `Nadchodzące wizyty: ${labels.join('; ')}`;
   }
@@ -1058,7 +1144,7 @@ export function formatAvailabilityResponse(
         slots: mapSlotsForResponse([exact], timezone),
       };
     }
-    const timeLabel = `${String(preferredTime.hour).padStart(2, '0')}:${String(preferredTime.minute).padStart(2, '0')}`;
+    const timeLabel = formatHourSpeechPl(preferredTime.hour, preferredTime.minute, 'locative');
     return {
       available: true,
       exact_match: false,

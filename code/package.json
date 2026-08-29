@@ -1,8 +1,8 @@
 {
-  "name": "vapi-frappe-code-nodes",
+  "name": "retell-n8n-code-nodes",
   "version": "1.0.0",
   "private": true,
-  "description": "Typed source for the n8n Code nodes (Meta parse + Vapi->Sheets map).",
+  "description": "Typed source for the n8n Code nodes (Retell scheduling, Sheets sync, Meta lead parsing).",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc",

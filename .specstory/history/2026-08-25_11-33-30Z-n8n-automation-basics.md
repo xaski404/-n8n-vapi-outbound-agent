@@ -1759,9 +1759,63 @@ technologią głosową (STT, TTS, IVR), czy ja coś z tego wykorzytuje w tym pro
 
 _**Agent (composer-2.5)**_
 
+<think><details><summary>Thought Process</summary>
+Użytkownik pyta o technologie głosowe (STT, TTS, IVR) i ich wykorzystanie w projekcie.
+
+Retell AI obsługuje STT i TTS wewnętrznie. Pr8n nie implementuje tych funkcji bezpośrednio. IVR może być częściowo pokrywane przez Retell. Sprawdzam dokumentację i kod źródłowy.
+</details></think>
+
+_**Agent (composer-2.5)**_
+
+Sprawdzę w projekcie, czy STT, TTS lub IVR są używane bezpośrednio, czy tylko po stronie Retell.
+
+
+_**Agent (composer-2.5)**_
+
 <tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
 <summary>Tool use: **ripgrep_raw_search**</summary>
-Status: **loading**
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": true,
+  "glob": "*.{ts,md,json,mjs,ps1}",
+  "path": "c:\\Users\\askik\\Desktop\\n8n_AI_assistant",
+  "pattern": "STT|TTS|IVR|speech|transcri|text-to-speech|voice"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "c:\\Users\\askik\\Desktop\\n8n_AI_assistant",
+  "pattern": "STT|TTS|IVR|speech|transcri|text-to-speech|voice",
+  "topFiles": [
+    {
+      "matchCount": 16,
+      "uri": ".\\scripts\\build-workflow.mjs"
+    },
+    {
+      "matchCount": 2,
+      "uri": ".\\code\\retellScheduling.ts"
+    },
+    {
+      "matchCount": 13,
+      "uri": ".\\.specstory\\history\\2026-08-25_11-33-30Z-n8n-automation-basics.md"
+    },
+    {
+      "matchCount": 9,
+      "uri": ".\\workflows\\vapi-outbound-agent.json"
+    }
+  ],
+  "totalFiles": 4,
+  "totalMatches": 1333
+}
+```
+Status: **completed**
 
 </details></tool-use>
 
@@ -1769,28 +1823,338 @@ _**Agent (composer-2.5)**_
 
 <tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
 <summary>Tool use: **ripgrep_raw_search**</summary>
-Status: **loading**
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": true,
+  "path": "c:\\Users\\askik\\Desktop\\n8n_AI_assistant\\docs",
+  "pattern": "retell|vapi|zadarma|telefon"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "c:\\Users\\askik\\Desktop\\n8n_AI_assistant\\docs",
+  "pattern": "retell|vapi|zadarma|telefon",
+  "topFiles": [
+    {
+      "matchCount": 5,
+      "uri": "docs/retell-custom-functions.json"
+    },
+    {
+      "matchCount": 18,
+      "uri": "docs/retell-agent-prompt.md"
+    },
+    {
+      "matchCount": 7,
+      "uri": "docs/deploy-hetzner.md"
+    }
+  ],
+  "totalFiles": 3,
+  "totalMatches": 52
+}
+```
+Status: **completed**
+
+</details></tool-use>
+
+_**Agent (composer-2.5)**_
+
+<think><details><summary>Thought Process</summary>
+Przeglądam dokumentację agenta pod kątem ustawień głosowych i bezpośrednich wywołań API dla STT/TTS.
+</details></think>
+
+_**Agent (composer-2.5)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2** • Read file: c:\Users\askik\Desktop\n8n_AI_assistant\docs\retell-agent-prompt.md</summary>
+
+</details></tool-use>
+
+_**Agent (composer-2.5)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": true,
+  "path": "c:\\Users\\askik\\Desktop\\n8n_AI_assistant",
+  "pattern": "whisper|deepgram|elevenlabs|azure|google.*speech|openai.*audio"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "c:\\Users\\askik\\Desktop\\n8n_AI_assistant",
+  "pattern": "whisper|deepgram|elevenlabs|azure|google.*speech|openai.*audio",
+  "topFiles": [
+    {
+      "matchCount": 23,
+      "uri": ".\\.specstory\\history\\2026-08-19_22-47-35Z-linkedin-project-description.md"
+    },
+    {
+      "matchCount": 2,
+      "uri": ".\\.specstory\\history\\2026-08-14_14-25-23Z-ai-customer-service-expansion.md"
+    },
+    {
+      "matchCount": 1,
+      "uri": ".\\workflows\\_e717.json"
+    },
+    {
+      "matchCount": 1,
+      "uri": ".\\workflows\\_e718.json"
+    },
+    {
+      "matchCount": 1,
+      "uri": ".\\workflows\\_e717.txt"
+    },
+    {
+      "matchCount": 1,
+      "uri": ".\\workflows\\_exec-latest.json"
+    },
+    {
+      "matchCount": 3,
+      "uri": ".\\.specstory\\history\\2026-08-17_13-23-19Z-professional-project-presentation.md"
+    },
+    {
+      "matchCount": 51,
+      "uri": ".\\.specstory\\history\\2026-08-08_20-13-23Z-bot-conversational-adjustments.md"
+    },
+    {
+      "matchCount": 12,
+      "uri": ".\\.specstory\\history\\2026-08-07_16-28-16Z-project-implementation-pricing.md"
+    },
+    {
+      "matchCount": 69,
+      "uri": ".\\.specstory\\history\\2026-08-12_12-03-13Z-aktualne-koszty-i-op.md"
+    },
+    {
+      "matchCount": 29,
+      "uri": ".\\.specstory\\history\\2026-08-09_09-27-25Z-polish-phone-number-setup.md"
+    },
+    {
+      "matchCount": 3,
+      "uri": ".\\.specstory\\history\\2026-08-08_19-51-14Z-money-balance-difference.md"
+    },
+    {
+      "matchCount": 2,
+      "uri": ".\\vapi\\outbound-call-payload.json"
+    },
+    {
+      "matchCount": 1,
+      "uri": ".\\.specstory\\history\\2026-08-04_21-18-55Z-automated-ai-voice-agent.md"
+    }
+  ],
+  "totalFiles": 14,
+  "totalMatches": 199
+}
+```
+Status: **completed**
 
 </details></tool-use>
 
 _**Agent (composer-2.5)**_
 
 <tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
-<summary>Tool use: **read_file_v2** • Read file: </summary>
+<summary>Tool use: **read_file_v2** • Read file: c:\Users\askik\Desktop\n8n_AI_assistant\docs\retell-outbound-agent-prompt.md</summary>
 
 </details></tool-use>
 
 _**Agent (composer-2.5)**_
 
-<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
-<summary>Tool use: **ripgrep_raw_search**</summary>
-Status: **loading**
+<think><details><summary>Thought Process</summary>
+Przygotowuję odpowiedź po polsku.
 
-</details></tool-use>
+Nie używasz tych technologii bezpośrednio w projekcie. Retell AI obsługuje je po stronie serwera i przekazuje wyniki przez webhooki. W kodzie masz tylko konfigurację głosu w panelu Retell. Rozpoznawanie mowy i syntezator tekstu nie są częścią aplikacji. Używasz też wyłącznie rozmownego agenta głosowego, nie klasycznego IVR.
+
+N8n zarządza integracjami i webhookami. Retell obsługuje telefonię, rozpoznawanie mowy, syntezator i rozmowę. Zadarma dostarcza numeru. W kodzie masz wyłącznie konfigurację promptów, ustawienia głosu w panelu Retell, przetwarzanie transkrypcji po rozmowie oraz zapisywanie linków do nagrania. Funkcje niestandardowe to zapytania HTTP, nie technologia głosowa.
+</details></think>
 
 _**Agent (composer-2.5)**_
 
-<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
-<summary>Tool use: **read_file_v2** • Read file: </summary>
+# STT, TTS, IVR — co z tego masz w projekcie?
 
-</details></tool-use>
+Krótka odpowiedź: **tak, korzystasz z technologii głosowych, ale pośrednio** — przez **Retell AI**. W tym repozytorium **nie implementujesz** STT, TTS ani klasycznego IVR. n8n obsługuje logikę biznesową *wokół* rozmowy, nie samą mowę.
+
+---
+
+## Podział odpowiedzialności
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  RETELL AI (platforma głosowa)                              │
+│  ┌─────────┐   ┌─────────┐   ┌──────────┐   ┌────────────┐ │
+│  │ Telefonia│ → │  STT    │ → │   LLM    │ → │    TTS     │ │
+│  │ (SIP)   │   │ (mowa→  │   │ (prompt, │   │ (tekst→    │ │
+│  │         │   │  tekst) │   │  narzędzia)│   │  mowa)     │ │
+│  └─────────┘   └─────────┘   └────┬─────┘   └────────────┘ │
+│                                    │ webhook HTTP            │
+└────────────────────────────────────┼────────────────────────┘
+                                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  TWÓJ PROJEKT (n8n + TypeScript)                            │
+│  • kalendarz (book / cancel / reschedule)                   │
+│  • Google Sheets (CRM)                                      │
+│  • przetwarzanie transcriptu PO rozmowie                    │
+│  • oddzwanianie do leadów Meta (HTTP → Retell API)          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## STT (Speech-to-Text) — mowa → tekst
+
+| Aspekt | W projekcie |
+|--------|-------------|
+| **Implementacja STT** | Nie — robi to Retell (np. Deepgram pod spodem) |
+| **Co robisz Ty** | Odbierasz gotowy **transcript** w webhooku `call_analyzed` |
+| **Gdzie w kodzie** | `mapRetellToSheets.ts` zapisuje `call.transcript` do Google Sheets |
+
+Przykład danych, które dostajesz *po* rozmowie:
+
+```json
+{
+  "event": "call_analyzed",
+  "call": {
+    "transcript": "Agent: Dzień dobry...\nUser: Chcę umówić trening",
+    "recording_url": "https://..."
+  }
+}
+```
+
+**Nie transkrybujesz audio sam** — Retell wysyła tekst. Ty go analizujesz (status, termin, imię z summary).
+
+---
+
+## TTS (Text-to-Speech) — tekst → mowa
+
+| Aspekt | W projekcie |
+|--------|-------------|
+| **Implementacja TTS** | Nie — robi Retell (np. ElevenLabs, głos „Grace” PL) |
+| **Co robisz Ty** | Konfigurujesz głos w **panelu Retell** + prompt |
+| **Gdzie w repo** | `docs/retell-agent-prompt.md` — ustawienia mowy |
+
+Ustawienia, które konfigurujesz w Retell (nie w n8n):
+
+- **Voice speed:** ~0.92  
+- **Voice temperature:** ~0.6  
+- **Interruption Sensitivity:** ~0.15  
+- **Response Eagerness:** ~0.55  
+- **Welcome Message** — pierwsze zdanie, które agent mówi
+
+```6:16:docs/retell-agent-prompt.md
+## Język, głos i ustawienia mowy
+
+- Język: **Polski**
+- Głos: ten sam co outbound (np. Grace / Polish) — spójność marki
+- **Response Eagerness (Responsiveness):** ok. **0.55** — spokojne tempo; bez pośpiechu między zdaniami
+- **Interruption Sensitivity:** ok. **0.15** — mniej przerwań w powitaniu (inaczej głos „skacze”)
+- **Voice temperature:** ok. **0.6** — stabilniejszy, mniej „losowy” głos niż przy 1.0
+- **Voice speed:** ok. **0.92** — lekko wolniej, jednolicie przez całą rozmowę
+```
+
+**W n8n nie generujesz mowy** — tylko odpowiadasz JSON-em na webhooki (np. lista wolnych terminów), a Retell zamienia to na wypowiedź agenta.
+
+---
+
+## IVR — klasyczne menu głosowe
+
+| Aspekt | W projekcie |
+|--------|-------------|
+| **Klasyczny IVR** („Naciśnij 1…”) | **Nie** |
+| **Co masz zamiast tego** | **Conversational AI** — agent rozumie mowę naturalną |
+| **Routing intencji** | LLM + prompt („umówić” vs „odwołać” vs „przełożyć”) |
+| **Telefonia** | Zadarma (numer studia) → Retell (inbound) |
+
+To **nowoczesny odpowiednik IVR**, ale bez klawiszy DTMF. Zamiast menu:
+
+```
+Stary IVR:     "Naciśnij 1 — umówienie, 2 — odwołanie"
+Twój projekt:  Agent słucha: "Chcę przełożyć wizytę na środę"
+               → LLM woła list_my_appointments → n8n → Google Calendar
+```
+
+Routing intencji jest w prompcie Retell, nie w kodzie n8n:
+
+```32:36:docs/retell-agent-prompt.md
+PRIORYTET #1 — ROUTING INTENCJI:
+- "przełożyć/przesunąć/zmienić termin" → PRZEŁOŻENIE → list_my_appointments. ZAKAZ book_appointment i "W jaki dzień umówimy trening?".
+- "odwołać/anulować/złożyć wizytę/zrezygnować z wizyty" → ODWOŁANIE → list_my_appointments. ZAKAZ umawiania.
+- "umówić/omówić/zapisać/chcę trening" → UMAWIANIE. ZAKAZ menu odwołanie/przełożenie.
+```
+
+---
+
+## Co dokładnie robi Twój kod vs Retell
+
+| Warstwa | Retell | Twój projekt (n8n) |
+|---------|--------|---------------------|
+| Odbieranie/dzwonienie | tak | tylko trigger outbound (HTTP API) |
+| STT | tak | — |
+| TTS | tak | — |
+| Rozmowa / LLM | tak (prompt) | — |
+| Custom functions w trakcie rozmowy | wywołuje webhooki | **implementacja** (kalendarz, slots) |
+| Po rozmowie: transcript, summary | generuje | **zapis do Sheets** |
+| Nagranie | hostuje URL | zapis `recording_url` w Sheets |
+
+---
+
+## Przepływ w czasie rozmowy (inbound)
+
+```
+Klient mówi: "Chcę umówić trening w środę"
+     │
+     ▼ [STT — Retell]
+Tekst: "Chcę umówić trening w środę"
+     │
+     ▼ [LLM — Retell, czyta prompt]
+Decyzja: wołam check_availability(preferred_day="środa")
+     │
+     ▼ [HTTP webhook → n8n]
+n8n: Google Calendar FreeBusy → zwraca sloty JSON
+     │
+     ▼ [Retell czyta odpowiedź]
+     │
+     ▼ [TTS — Retell]
+Agent mówi: "W środę mamy wolne o 15:00 i 17:00"
+```
+
+**STT/TTS dzieją się w Retell.** n8n dostaje tekst (argumenty funkcji) i zwraca JSON.
+
+---
+
+## Podsumowanie — co musisz umieć jako automatyzator
+
+| Technologia | Czy w projekcie? | Co warto umieć |
+|-------------|------------------|----------------|
+| **STT** | pośrednio (Retell) | Rozumieć, że dostajesz transcript; nie musisz integrować Whisper/Deepgram |
+| **TTS** | pośrednio (Retell) | Dobór głosu, tempo, czułość przerwań w panelu Retell |
+| **IVR klasyczny** | nie | Znać różnicę: menu DTMF vs conversational AI |
+| **Voice AI platform** | **tak (Retell)** | Prompty, custom functions, webhooks |
+| **Telefonia SIP** | pośrednio (Zadarma) | Numer → Retell; bez kodu w repo |
+
+---
+
+## Jeśli chcesz uczyć się STT/TTS/IVR „na poważnie”
+
+Ten projekt uczy Cię **architektury voice AI**, nie niskopoziomowego STT/TTS. To typowy model produkcyjny: platforma (Retell/Vapi/Bland) + orchestrator (n8n) + backend (kalendarz, CRM).
+
+Żeby wejść głębiej w samą technologię głosową, musiałbyś:
+- integrować **Whisper / Deepgram** (STT) bezpośrednio,
+- używać **ElevenLabs / Azure Speech** (TTS) w kodzie,
+- budować **IVR w Asterisk / Twilio Studio**.
+
+Tego **tu nie ma** — i to świadomy wybór architektoniczny.
+
+Mogę rozwinąć któryś wątek: np. jak dokładnie działa `call_analyzed` i transcript, albo jak skonfigurować głos w Retell krok po kroku.

@@ -63,7 +63,7 @@ Albo skopiuj i uruchom `deploy/hetzner/setup-server.sh`.
 cd C:\Users\askik\Desktop\n8n_AI_assistant
 
 scp deploy/hetzner/docker-compose.yml root@TWOJ_IP:/opt/n8n-retell/
-scp workflows/vapi-outbound-agent.json root@TWOJ_IP:/opt/n8n-retell/
+scp workflows/retell-voice-agent.json root@TWOJ_IP:/opt/n8n-retell/
 scp .env root@TWOJ_IP:/opt/n8n-retell/.env
 ```
 
@@ -126,7 +126,7 @@ ssh -L 5678:127.0.0.1:5678 root@TWOJ_IP
 Potem w przeglądarce: **http://localhost:5678**
 
 1. Załóż konto admina (pierwsze logowanie)
-2. **Workflows → Import** → `vapi-outbound-agent.json`
+2. **Workflows → Import** → `retell-voice-agent.json`
 3. **Credentials → Google Sheets OAuth2** — zaloguj się kontem Google studia
 4. **Credentials → Google Calendar OAuth2** — to samo konto
 5. Przypisz credentials do node'ów HTTP (Sheets, Calendar)
@@ -166,7 +166,7 @@ Na laptopie (dev):
 
 ```powershell
 node scripts/build-workflow.mjs
-scp workflows/vapi-outbound-agent.json root@TWOJ_IP:/opt/n8n-retell/
+scp workflows/retell-voice-agent.json root@TWOJ_IP:/opt/n8n-retell/
 ```
 
 W n8n UI (przez SSH tunnel): re-import workflow albo edytuj ręcznie.

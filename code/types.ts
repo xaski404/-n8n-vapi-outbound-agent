@@ -65,63 +65,6 @@ export interface RetellCallAnalyzedWebhook {
   call?: RetellCallObject;
 }
 
-/* ------------------------------ Vapi report (legacy) --------------------- */
-
-export type VapiEndedReason = string;
-
-export interface VapiStructuredData {
-  /** Outcome the assistant recorded via function/tool calling. */
-  outcome?: 'interested' | 'not_interested' | 'callback' | 'no_answer' | 'voicemail' | string;
-  callback_at?: string;
-  budget?: string | number;
-  sessions_per_week?: string | number;
-  preferred_session_date?: string;
-  notes?: string;
-  [key: string]: unknown;
-}
-
-export interface VapiMessage {
-  role: 'assistant' | 'user' | 'system' | 'tool' | 'bot';
-  message?: string;
-  time?: number;
-}
-
-/** The relevant slice of Vapi's end-of-call-report webhook body. */
-export interface VapiEndOfCallReport {
-  message: {
-    type: 'end-of-call-report' | string;
-    endedReason?: VapiEndedReason;
-    call?: {
-      id?: string;
-      customer?: { number?: string };
-      assistantId?: string;
-      /** Values we injected at dispatch time round-trip back here. */
-      assistantOverrides?: { variableValues?: Record<string, unknown> };
-    };
-    /** Present when a phone number was called. */
-    phoneNumber?: { number?: string };
-    customer?: { number?: string };
-    artifact?: {
-      transcript?: string;
-      messages?: VapiMessage[];
-      recordingUrl?: string;
-      presignedMonoUrl?: string;
-      presignedStereoUrl?: string;
-    };
-    /** Some payload versions place transcript/summary at message root. */
-    transcript?: string;
-    summary?: string;
-    analysis?: {
-      summary?: string;
-      structuredData?: VapiStructuredData;
-      successEvaluation?: string | boolean;
-    };
-    durationSeconds?: number;
-    startedAt?: string;
-    endedAt?: string;
-  };
-}
-
 /* ---------------------------- Google Sheets ---------------------------- */
 
 export type VoiceLeadStatus =

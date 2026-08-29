@@ -19,7 +19,7 @@ import {
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const envFile = join(root, '.env');
-const INBOUND_AGENT_ID = 'agent_edfc81cbe141dc83d40217c3b1';
+// Fallback removed — always use RETELL_INBOUND_AGENT_ID from .env
 
 function readDotEnv(path) {
   const vars = {};
@@ -118,7 +118,7 @@ function patchToolUrls(tools, base) {
     check_availability: calendarTool(
       base,
       'check_availability',
-      'Sprawdza wolne terminy. Przy przelozzeniu — dopiero PO list_my_appointments i potwierdzeniu starej wizyty. Gdy klient podal konkretna godzine — podaj preferred_time (np. 12:00); backend zwroci exact_match:true i jeden slot.',
+      'Sprawdza wolne terminy. Przy przelozzeniu — dopiero PO list_my_appointments i potwierdzeniu starej wizyty. Gdy klient podal konkretna godzine — podaj preferred_time (np. 12:00); backend zwroci exact_match:true i jeden slot. Gdy klient wybral godzine z juz pokazanych slots[] — NIE wołaj ponownie, od razu reschedule/book.',
       `${base}/webhook/retell-check-availability`,
       {
         type: 'object',
@@ -136,7 +136,7 @@ function patchToolUrls(tools, base) {
           },
         },
       },
-      'Moment, sprawdzam kalendarz.',
+      'Proszę chwilę poczekać, sprawdzam wolne terminy.',
     ),
     book_appointment: calendarTool(
       base,
@@ -144,7 +144,7 @@ function patchToolUrls(tools, base) {
       BOOK_APPOINTMENT_TOOL_DESCRIPTION,
       `${base}/webhook/retell-book-appointment`,
       bookParams,
-      'Zapisuję termin.',
+      'Proszę chwilę poczekać, zapisuję termin.',
       { mutating: true },
     ),
     list_my_appointments: calendarTool(
@@ -158,7 +158,7 @@ function patchToolUrls(tools, base) {
           customer_name: { type: 'string', description: 'Imie i nazwisko klienta (opcjonalnie, do dopasowania)' },
         },
       },
-      'Sprawdzam Twoje wizyty.',
+      'Proszę chwilę poczekać, sprawdzam Twoje wizyty.',
     ),
     cancel_appointment: calendarTool(
       base,
@@ -166,7 +166,7 @@ function patchToolUrls(tools, base) {
       CANCEL_APPOINTMENT_TOOL_DESCRIPTION,
       `${base}/webhook/retell-cancel-appointment`,
       cancelParams,
-      'Odwołuję wizytę.',
+      'Proszę chwilę poczekać, odwołuję wizytę.',
       { mutating: true },
     ),
     reschedule_appointment: calendarTool(
@@ -175,7 +175,7 @@ function patchToolUrls(tools, base) {
       RESCHEDULE_APPOINTMENT_TOOL_DESCRIPTION,
       `${base}/webhook/retell-reschedule-appointment`,
       rescheduleParams,
-      'Przekładam termin.',
+      'Proszę chwilę poczekać, przekładam wizytę.',
       { mutating: true },
     ),
   };
@@ -316,7 +316,7 @@ const env = readDotEnv(envFile);
 const apiKey = env.RETELL_API_KEY;
 const base = (env.PUBLIC_WEBHOOK_URL ?? '').replace(/\/$/, '');
 const phone = env.RETELL_FROM_NUMBER;
-const inboundAgentId = env.RETELL_INBOUND_AGENT_ID || INBOUND_AGENT_ID;
+const inboundAgentId = env.RETELL_INBOUND_AGENT_ID;
 const outboundAgentId = env.RETELL_OUTBOUND_AGENT_ID || env.RETELL_AGENT_ID;
 
 if (!apiKey) {
@@ -327,8 +327,12 @@ if (!base) {
   console.error('Brak PUBLIC_WEBHOOK_URL w .env');
   process.exit(1);
 }
+if (!inboundAgentId) {
+  console.error('Brak RETELL_INBOUND_AGENT_ID w .env');
+  process.exit(1);
+}
 
-const agentIds = [inboundAgentId, outboundAgentId, env.RETELL_AGENT_ID].filter(Boolean);
+const agentIds = [inboundAgentId, outboundAgentId].filter(Boolean);
 const unique = [...new Set(agentIds)];
 
 const published = [];

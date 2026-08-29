@@ -8,9 +8,11 @@ import {
   defaultStudioConfig,
   findMatchingCalendarEvent,
   formatAvailabilityResponse,
+  formatHourSpeechPl,
   formatListAppointmentsResponse,
   formatSlotStartForAgent,
   filterSlotsByTimeOfDay,
+  freeBusyTimeRange,
   getAvailableSlots,
   parseAvailabilityQuery,
   parseCalendarBusyBlocks,
@@ -22,6 +24,7 @@ import {
   resolveAgentSlotStart,
   resolveFutureSlotStart,
   resolveCancelSlotStart,
+  slotLabelFromIso,
   slotLabelFromIso,
   validateBookingSlot,
 } from '../retellScheduling';
@@ -65,6 +68,16 @@ describe('retellScheduling', () => {
     assert.equal(parsePreferredDate('21', now), '2026-08-21');
   });
 
+  it('parsePreferredDate handles jutro/pojutrze/następny dzień', () => {
+    const now = new Date('2026-09-01T10:00:00+02:00');
+    assert.equal(parsePreferredDate('jutro', now), '2026-09-02');
+    assert.equal(parsePreferredDate('pojutrze', now), '2026-09-03');
+    assert.equal(parsePreferredDate('następny dzień', now), '2026-09-02');
+    assert.equal(parsePreferredDate('kolejny dzień', now), '2026-09-02');
+    assert.equal(parsePreferredDate('dzień później', now), '2026-09-02');
+    assert.equal(parsePreferredDate('tomorrow', now), '2026-09-02');
+  });
+
   it('parseAvailabilityQuery extracts day number from piątek 21', () => {
     const q = parseAvailabilityQuery('piątek 21', undefined, new Date('2026-08-19T10:00:00+02:00'));
     assert.equal(q.preferredDateYmd, '2026-08-21');
@@ -82,6 +95,20 @@ describe('retellScheduling', () => {
     assert.deepEqual(parsePreferredTime('15'), { hour: 15, minute: 0 });
     assert.deepEqual(parsePreferredTime('dwunasta'), { hour: 12, minute: 0 });
     assert.equal(parsePreferredTime('rano'), undefined);
+  });
+
+  it('formatHourSpeechPl uses feminine Polish hour forms', () => {
+    assert.equal(formatHourSpeechPl(17, 0, 'nominative'), 'siedemnasta');
+    assert.equal(formatHourSpeechPl(17, 0, 'locative'), 'siedemnastej');
+    assert.equal(formatHourSpeechPl(12, 0, 'nominative'), 'dwunasta');
+    assert.equal(formatHourSpeechPl(8, 0, 'nominative'), 'ósma');
+  });
+
+  it('slotLabelFromIso speaks hours in Polish not digits', () => {
+    const label = slotLabelFromIso('2026-08-26T15:00:00+02:00', 'Europe/Warsaw');
+    assert.match(label.toLowerCase(), /piętnasta/);
+    assert.doesNotMatch(label, /15:00/);
+    assert.doesNotMatch(label, /piętnaście/i);
   });
 
   it('formatAvailabilityResponse returns exact_match for requested hour', () => {
@@ -126,6 +153,22 @@ describe('retellScheduling', () => {
     const q = parseAvailabilityQuery('kolejny piątek', undefined, new Date('2026-08-19T10:00:00+02:00'));
     assert.deepEqual(q.preferredDows, [5]);
     assert.equal(q.skipOccurrences, 1);
+  });
+
+  it('freeBusyTimeRange uses one day when a concrete date is given', () => {
+    const now = new Date('2026-08-29T21:00:00+02:00');
+    const query = parseAvailabilityQuery(undefined, '2 września', now);
+    const range = freeBusyTimeRange(now, query, defaultStudioConfig());
+    const spanHours = (new Date(range.timeMax).getTime() - new Date(range.timeMin).getTime()) / 3600000;
+    assert.ok(spanHours <= 26, `expected ~1 day, got ${spanHours}h`);
+  });
+
+  it('freeBusyTimeRange stays short when only a weekday is given', () => {
+    const now = new Date('2026-08-29T21:00:00+02:00');
+    const query = parseAvailabilityQuery('wtorek', undefined, now);
+    const range = freeBusyTimeRange(now, query, defaultStudioConfig());
+    const spanDays = (new Date(range.timeMax).getTime() - new Date(range.timeMin).getTime()) / 86400000;
+    assert.ok(spanDays <= 16.1, `expected <=16 days, got ${spanDays}`);
   });
 
   it('getAvailableSlots returns only requested calendar date', () => {
@@ -420,7 +463,7 @@ describe('retellScheduling', () => {
     assert.ok((list.appointments as { label: string }[])[0].label);
   });
 
-  it('formatListAppointmentsResponse groups many same-day appointments', () => {
+  it('formatListAppointmentsResponse lists all same-day appointments', () => {
     const now = new Date('2026-08-19T10:00:00+02:00');
     const cfg = defaultStudioConfig();
     const base = '2026-08-26T';
@@ -440,7 +483,8 @@ describe('retellScheduling', () => {
       now,
     );
     assert.equal(list.found, true);
-    assert.match(list.message as string, /5 wizyt w .* — podaj godzinę/);
+    assert.equal((list.appointments as unknown[]).length, 5);
+    assert.match(list.message as string, /ósma.*dziewiąta.*siedemnasta/);
   });
 
   it('formatListAppointmentsResponse keeps Friday when many Wednesday test slots exist', () => {
@@ -462,12 +506,13 @@ describe('retellScheduling', () => {
     }));
     const list = formatListAppointmentsResponse({ items }, phone, 'Jakub Łaski', cfg, now);
     const labels = (list.appointments as { label: string }[]).map((a) => a.label);
-    assert.ok(labels.some((l) => /piątek.*15:00/.test(l)), `expected Friday 15:00 in ${labels.join('; ')}`);
+    assert.equal(labels.length, 6);
+    assert.ok(labels.some((l) => /piątek.*piętnasta/i.test(l)), `expected Friday piętnasta in ${labels.join('; ')}`);
   });
 
   it('slotLabelFromIso formats Polish label', () => {
     const label = slotLabelFromIso('2026-08-21T11:00:00+02:00', 'Europe/Warsaw');
-    assert.match(label, /piątek|21|sierpnia|11/i);
+    assert.match(label, /piątek|21|sierpnia|jedenasta/i);
   });
 
   it('configFromEnv reads studio settings', () => {
@@ -493,7 +538,7 @@ describe('retellScheduling', () => {
     const wrongIso = '2026-08-28T18:00:00.000Z'; // reads as 20:00 Warsaw
     const fixed = resolveAgentSlotStart(wrongIso, cfg, busy, now);
     const label = slotLabelFromIso(fixed, 'Europe/Warsaw');
-    assert.match(label, /19:00|19\.00/);
+    assert.match(label, /dziewiętnasta/);
   });
 
   it('formatAvailabilityResponse slots start hour matches label hour', () => {
@@ -503,7 +548,7 @@ describe('retellScheduling', () => {
     const resp = formatAvailabilityResponse(slots, { timezone: 'Europe/Warsaw' }) as {
       slots: { start: string; label: string }[];
     };
-    const evening = resp.slots.find((s) => s.label.includes('19:00'));
+    const evening = resp.slots.find((s) => s.label.includes('dziewiętnasta'));
     assert.ok(evening);
     assert.match(evening!.start, /T19:00:00/);
   });

@@ -2,7 +2,7 @@
  * Deterministically builds the importable n8n workflow JSON.
  *
  *   node scripts/build-workflow.mjs
- * emits: workflows/vapi-outbound-agent.json
+ * emits: workflows/retell-voice-agent.json
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +41,52 @@ function sheetRowValues(sheet) {
     sheet.sessions_per_week || '', preferred,
   ];
 }
+const SHEET_COLUMN_KEYS = ${JSON.stringify(sheetColumnKeys)};
+const BOOKING_STATUSES = { 'umówiono': true, 'przełożono': true };
+function valuesToPartialSheetRow(values) {
+  const row = {};
+  SHEET_COLUMN_KEYS.forEach(function(k, i) {
+    if (values[i] != null && values[i] !== '') row[k] = values[i];
+  });
+  return row;
+}
+function findLastSheetRowByPhone(rows, phone) {
+  const key = phoneKey(phone);
+  var rowNumber = 0;
+  var values = null;
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i] && phoneKey(rows[i][0]) === key) {
+      rowNumber = i + 1;
+      values = rows[i];
+    }
+  }
+  return { rowNumber: rowNumber, values: values };
+}
+function mergeSheetRowsForUpsert(existing, incoming) {
+  const merged = Object.assign({}, incoming);
+  if ((incoming.transcript || '').trim()) merged.transcript = incoming.transcript.trim();
+  else if ((existing.transcript || '').trim()) merged.transcript = existing.transcript;
+  if ((incoming.recording_url || '').trim()) merged.recording_url = incoming.recording_url.trim();
+  else if ((existing.recording_url || '').trim()) merged.recording_url = existing.recording_url;
+  if ((incoming.call_summary || '').trim()) merged.call_summary = incoming.call_summary.trim();
+  else if ((existing.call_summary || '').trim()) merged.call_summary = existing.call_summary;
+  const incomingTerm = ((incoming.preferred_session_date || incoming.booked_slot || '') + '').trim();
+  const existingTerm = ((existing.preferred_session_date || existing.booked_slot || '') + '').trim();
+  if (!incomingTerm && existingTerm) {
+    merged.preferred_session_date = existingTerm;
+    merged.booked_slot = existing.booked_slot || existingTerm;
+  }
+  if (incoming.full_name === 'Nieznany kontakt' && existing.full_name && existing.full_name !== 'Nieznany kontakt') {
+    merged.full_name = existing.full_name;
+  }
+  if (existing.status && BOOKING_STATUSES[existing.status] && incoming.status === 'zainteresowany') {
+    merged.status = existing.status;
+  }
+  if (!(incoming.sessions_per_week || '').trim() && (existing.sessions_per_week || '').trim()) {
+    merged.sessions_per_week = existing.sessions_per_week;
+  }
+  return merged;
+}
 `;
 
 // --- Shared scheduling helpers (ported from code/retellScheduling.ts) ---------
@@ -75,6 +121,17 @@ const POLISH_MONTHS = {
 function parsePreferredDate(input, now, timezone) {
   var raw = (input || '').trim();
   if (!raw) return undefined;
+  var lower = raw.toLowerCase();
+  if (/\\bjutro\\b|\\btomorrow\\b/i.test(lower)) {
+    return addDaysToYmd(zonedParts(now || new Date(), timezone || 'Europe/Warsaw').ymd, 1);
+  }
+  if (/\\bpojutrze\\b/i.test(lower)) {
+    return addDaysToYmd(zonedParts(now || new Date(), timezone || 'Europe/Warsaw').ymd, 2);
+  }
+  if (/(?:nast[e\\u0119]pn|kolejn|next).*(?:dzie[n\\u0144]|dnia|day)/i.test(lower) ||
+      /(?:dzie[n\\u0144]|dnia).*(?:p[o\\u00f3][z\\u017a]niej|potem|dalej|later)/i.test(lower)) {
+    return addDaysToYmd(zonedParts(now || new Date(), timezone || 'Europe/Warsaw').ymd, 1);
+  }
   var iso = raw.match(/^(\\d{4})-(\\d{2})-(\\d{2})/);
   if (iso) return iso[1] + '-' + iso[2] + '-' + iso[3];
   var dotted = raw.match(/(\\d{1,2})[.\\-/](\\d{1,2})(?:[.\\-/](\\d{2,4}))?/);
@@ -127,6 +184,34 @@ var POLISH_HOUR_WORDS = {
   trzynasta: 13, czternasta: 14, pietnasta: 15, szesnasta: 16,
   siedemnasta: 17, osiemnasta: 18, dziewietnasta: 19, dwudziesta: 20,
 };
+var POLISH_HOUR_NOMINATIVE = {
+  0: 'północ', 1: 'pierwsza', 2: 'druga', 3: 'trzecia', 4: 'czwarta', 5: 'piąta',
+  6: 'szósta', 7: 'siódma', 8: 'ósma', 9: 'dziewiąta', 10: 'dziesiąta', 11: 'jedenasta',
+  12: 'dwunasta', 13: 'trzynasta', 14: 'czternasta', 15: 'piętnasta', 16: 'szesnasta',
+  17: 'siedemnasta', 18: 'osiemnasta', 19: 'dziewiętnasta', 20: 'dwudziesta',
+  21: 'dwudziesta pierwsza', 22: 'dwudziesta druga', 23: 'dwudziesta trzecia',
+};
+var POLISH_HOUR_LOCATIVE = {
+  0: 'północy', 1: 'pierwszej', 2: 'drugiej', 3: 'trzeciej', 4: 'czwartej', 5: 'piątej',
+  6: 'szóstej', 7: 'siódmej', 8: 'ósmej', 9: 'dziewiątej', 10: 'dziesiątej', 11: 'jedenastej',
+  12: 'dwunastej', 13: 'trzynastej', 14: 'czternastej', 15: 'piętnastej', 16: 'szesnastej',
+  17: 'siedemnastej', 18: 'osiemnastej', 19: 'dziewiętnastej', 20: 'dwudziestej',
+  21: 'dwudziestej pierwszej', 22: 'dwudziestej drugiej', 23: 'dwudziestej trzeciej',
+};
+function formatHourSpeechPl(hour, minute, form) {
+  minute = minute || 0;
+  form = form || 'nominative';
+  var hourWord = form === 'locative'
+    ? (POLISH_HOUR_LOCATIVE[hour] || (hour + ':00'))
+    : (POLISH_HOUR_NOMINATIVE[hour] || (hour + ':00'));
+  if (minute === 0) return hourWord;
+  var minuteWords = {
+    5: 'pięć', 10: 'dziesięć', 15: 'piętnaście', 20: 'dwadzieścia', 25: 'dwadzieścia pięć',
+    30: 'trzydzieści', 35: 'trzydzieści pięć', 40: 'czterdzieści', 45: 'czterdzieści pięć',
+    50: 'pięćdziesiąt', 55: 'pięćdziesiąt pięć',
+  };
+  return hourWord + ' ' + (minuteWords[minute] || String(minute));
+}
 function parsePreferredTime(input) {
   if (!input || !String(input).trim()) return undefined;
   var n = stripDiacritics(String(input).toLowerCase().trim());
@@ -230,6 +315,19 @@ function parseAvailabilityQuery(preferredDay, preferredDate, now, timezone) {
   }
   return query;
 }
+function freeBusyTimeRange(now, query, config) {
+  var tz = (config && config.timezone) || 'Europe/Warsaw';
+  if (query && query.preferredDateYmd) {
+    var start = wallClockToDate(query.preferredDateYmd, 0, 0, tz);
+    var timeMinDate = start.getTime() < now.getTime() ? now : start;
+    var end = wallClockToDate(addDaysToYmd(query.preferredDateYmd, 1), 0, 0, tz);
+    return { timeMin: timeMinDate.toISOString(), timeMax: end.toISOString() };
+  }
+  var days = (query && query.preferredDows) ? 16 : Math.min((config && config.daysAhead) || 14, 14);
+  var timeMax = new Date(now);
+  timeMax.setDate(timeMax.getDate() + days);
+  return { timeMin: now.toISOString(), timeMax: timeMax.toISOString() };
+}
 function configFromEnv(env) {
   const workDaysRaw = ((env.STUDIO_WORK_DAYS || '1,2,3,4,5') + '').split(',').map(function(d) { return parseInt(d.trim(), 10); });
   return {
@@ -274,10 +372,11 @@ function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart;
 }
 function formatSlotLabel(start, timezone) {
-  return new Intl.DateTimeFormat('pl-PL', {
+  var parts = zonedParts(start, timezone);
+  var datePart = new Intl.DateTimeFormat('pl-PL', {
     timeZone: timezone, weekday: 'long', day: 'numeric', month: 'long',
-    hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(start);
+  return datePart + ', ' + formatHourSpeechPl(parts.hour, parts.minute, 'nominative');
 }
 function getAvailableSlots(config, busyBlocks, now, preferredDay, availabilityQuery) {
   const slots = [];
@@ -342,7 +441,7 @@ function formatAvailabilityResponse(slots, options) {
         slots: mapSlotsForResponse([exact], timezone),
       };
     }
-    var timeLabel = String(preferredTime.hour).padStart(2, '0') + ':' + String(preferredTime.minute).padStart(2, '0');
+    var timeLabel = formatHourSpeechPl(preferredTime.hour, preferredTime.minute, 'locative');
     return {
       available: true,
       exact_match: false,
@@ -568,34 +667,11 @@ function eventMatchesCustomer(event, phone, customerName) {
   return false;
 }
 function selectAppointmentsForList(rows, timezone, maxTotal, maxPerDay) {
-  maxTotal = maxTotal || 12;
-  maxPerDay = maxPerDay || 2;
-  var sorted = rows.slice().sort(function(a, b) { return a.startMs - b.startMs; });
-  var byDay = {};
-  sorted.forEach(function(row) {
-    var day = zonedParts(new Date(row.startMs), timezone).ymd;
-    if (!byDay[day]) byDay[day] = [];
-    byDay[day].push(row);
-  });
-  var dayKeys = Object.keys(byDay);
-  if (dayKeys.length <= 1) return sorted.slice(0, maxTotal);
-  dayKeys.sort();
-  var selected = [];
-  for (var round = 0; round < maxPerDay && selected.length < maxTotal; round++) {
-    for (var i = 0; i < dayKeys.length; i++) {
-      var dayRows = byDay[dayKeys[i]];
-      if (round < dayRows.length) {
-        selected.push(dayRows[round]);
-        if (selected.length >= maxTotal) break;
-      }
-    }
-  }
-  return selected.sort(function(a, b) { return a.startMs - b.startMs; });
+  return rows.slice().sort(function(a, b) { return a.startMs - b.startMs; });
 }
 function formatListAppointmentsResponse(listResponse, phone, customerName, config, now, maxReturned) {
   const refNow = now || new Date();
   const tz = (config && config.timezone) || 'Europe/Warsaw';
-  const limit = maxReturned || 12;
   if (listResponse.error && listResponse.error.message) {
     return { found: false, message: 'Błąd kalendarza: ' + listResponse.error.message, appointments: [] };
   }
@@ -607,7 +683,7 @@ function formatListAppointmentsResponse(listResponse, phone, customerName, confi
     return { event: event, startMs: eventStartMs(event) };
   }).filter(function(row) {
     return row.startMs != null && row.startMs >= refNow.getTime() - 60000;
-  }), tz, limit, 2);
+  }), tz);
   const appointments = upcoming.map(function(row) {
     const startIso = (row.event.start && (row.event.start.dateTime || row.event.start.date)) || '';
     return {
@@ -634,9 +710,7 @@ function formatListAppointmentsResponse(listResponse, phone, customerName, confi
   if (dayKeys.length === 1) {
     var day = dayKeys[0];
     var hours = byDay[day];
-    message = hours.length > 3
-      ? hours.length + ' wizyt w ' + day + ' — podaj godzinę wizyty do przesunięcia'
-      : 'Wizyty w ' + day + ': ' + hours.join(', ');
+    message = 'Wizyty w ' + day + ': ' + hours.join(', ');
   } else {
     message = 'Nadchodzące wizyty: ' + labels.join('; ');
   }
@@ -863,26 +937,28 @@ const output = items.map((item) => {
 return output;`;
 
 const prepareSheetsUpsertCode = `${sheetHelpersJs}
-// Find existing row by phone for upsert.
+// Find existing row by phone for upsert (last match — book/reschedule append during call).
 const mapped = $('Map Retell to Sheets').first().json;
 const tabJson = $('Get Sheet Tab Name').first().json;
 if (!tabJson.sheets || !tabJson.sheets[0]) {
   return [{ json: { skipped: true, reason: 'Nie udało się odczytać zakładki arkusza (OAuth?)', upsertMode: 'append' } }];
 }
 const tabTitle = tabJson.sheets[0].properties.title;
-const phoneData = $('Get Phone Column').first().json;
-const rows = phoneData.values || [];
+const sheetData = $('Get Sheet Rows').first().json;
+const rows = sheetData.values || [];
 const phone = mapped.upsertKey;
-let rowNumber = 0;
-for (let i = 1; i < rows.length; i++) {
-  if (rows[i] && phoneKey(rows[i][0]) === phoneKey(phone)) { rowNumber = i + 1; break; }
+const last = findLastSheetRowByPhone(rows, phone);
+const rowNumber = last.rowNumber;
+let sheet = mapped.sheet;
+if (rowNumber > 0 && last.values) {
+  const existing = valuesToPartialSheetRow(last.values);
+  sheet = mergeSheetRowsForUpsert(existing, mapped.sheet);
 }
-const sheet = mapped.sheet;
-const rowValues = mapped.rowValues || sheetRowValues(sheet);
+const rowValues = sheetRowValues(sheet);
 return [{
   json: {
     skipped: mapped.skipped,
-    sheet: mapped.sheet,
+    sheet: sheet,
     upsertKey: mapped.upsertKey,
     retellCallId: mapped.retellCallId,
     disconnectionReason: mapped.disconnectionReason,
@@ -918,6 +994,7 @@ const sheet = {
 return [{
   json: {
     skipped: false,
+    syncMode: 'append',
     sheet: sheet,
     upsertKey: phone,
     rowValues: sheetRowValues(sheet),
@@ -945,6 +1022,7 @@ const sheet = {
 return [{
   json: {
     skipped: false,
+    syncMode: 'upsert',
     sheet: sheet,
     upsertKey: phone,
     rowValues: sheetRowValues(sheet),
@@ -975,6 +1053,8 @@ const sheet = {
 return [{
   json: {
     skipped: false,
+    syncMode: 'delete_and_append',
+    oldLabel: validated.old_label || '',
     sheet: sheet,
     upsertKey: phone,
     rowValues: sheetRowValues(sheet),
@@ -988,22 +1068,53 @@ const mapped = $('Sheets sync ready?').first().json;
 if (mapped.skipped || !mapped.upsertKey || !mapped.sheetsDocumentId) {
   return [{ json: Object.assign({}, mapped, { skipped: true }) }];
 }
-const tabTitle = $('Get Sheet Tab (Sync)').first().json.sheets[0].properties.title;
-const phoneData = items[0].json;
-const rows = phoneData.values || [];
-let rowNumber = 0;
-for (let i = 1; i < rows.length; i++) {
-  if (rows[i] && phoneKey(rows[i][0]) === phoneKey(mapped.upsertKey)) { rowNumber = i + 1; break; }
+var tabProps = $('Get Sheet Tab (Sync)').first().json.sheets[0].properties;
+var tabTitle = tabProps.title;
+var tabSheetId = tabProps.sheetId || 0;
+var allData = items[0].json;
+var rows = allData.values || [];
+var rowValues = mapped.rowValues || sheetRowValues(mapped.sheet);
+var syncMode = mapped.syncMode || 'upsert';
+
+if (syncMode === 'append') {
+  return [{ json: Object.assign({}, mapped, {
+    tabTitle: tabTitle, tabSheetId: tabSheetId,
+    upsertMode: 'append', rowNumber: 0, deleteRowNumber: 0,
+    rowValues: rowValues, colEnd: '${sheetColEnd}', skipped: false,
+  }) }];
 }
-const rowValues = mapped.rowValues || sheetRowValues(mapped.sheet);
+
+if (syncMode === 'delete_and_append') {
+  var deleteRow = 0;
+  var oldLabel = (mapped.oldLabel || '').trim().toLowerCase();
+  for (var i = 1; i < rows.length; i++) {
+    if (!rows[i]) continue;
+    var phoneMatch = phoneKey(rows[i][0]) === phoneKey(mapped.upsertKey);
+    var labelMatch = oldLabel && rows[i][7] && rows[i][7].trim().toLowerCase() === oldLabel;
+    if (phoneMatch && labelMatch) { deleteRow = i + 1; break; }
+  }
+  if (deleteRow === 0) {
+    for (var j = 1; j < rows.length; j++) {
+      if (rows[j] && phoneKey(rows[j][0]) === phoneKey(mapped.upsertKey)) { deleteRow = j + 1; break; }
+    }
+  }
+  return [{ json: Object.assign({}, mapped, {
+    tabTitle: tabTitle, tabSheetId: tabSheetId,
+    upsertMode: 'delete_and_append', rowNumber: 0, deleteRowNumber: deleteRow,
+    rowValues: rowValues, colEnd: '${sheetColEnd}', skipped: false,
+  }) }];
+}
+
+var rowNumber = 0;
+for (var k = 1; k < rows.length; k++) {
+  if (rows[k] && phoneKey(rows[k][0]) === phoneKey(mapped.upsertKey)) { rowNumber = k + 1; break; }
+}
 return [{
   json: Object.assign({}, mapped, {
-    tabTitle: tabTitle,
+    tabTitle: tabTitle, tabSheetId: tabSheetId,
     upsertMode: rowNumber > 0 ? 'update' : 'append',
-    rowNumber: rowNumber,
-    rowValues: rowValues,
-    colEnd: '${sheetColEnd}',
-    skipped: false,
+    rowNumber: rowNumber, deleteRowNumber: 0,
+    rowValues: rowValues, colEnd: '${sheetColEnd}', skipped: false,
   }),
 }];`;
 
@@ -1011,18 +1122,12 @@ const mergeSheetsRowSyncCode = `${sheetHelpersJs}
 const mapped = $('Prepare Sheets Upsert (Sync)').first().json;
 const existing = items[0].json;
 const existingValues = (existing.values && existing.values[0]) || [];
-const keys = ${JSON.stringify(sheetColumnKeys)};
-const existingRow = {};
-keys.forEach(function(k, i) { if (existingValues[i]) existingRow[k] = existingValues[i]; });
-const incoming = mapped.sheet;
-const merged = Object.assign({}, incoming);
-['transcript', 'recording_url', 'call_summary'].forEach(function(k) {
-  if (!incoming[k] && existingRow[k]) merged[k] = existingRow[k];
-});
-if (existingRow.full_name && incoming.full_name === 'Nieznany kontakt') merged.full_name = existingRow.full_name;
-merged.status = incoming.status;
-merged.preferred_session_date = incoming.preferred_session_date || incoming.booked_slot || '';
-merged.booked_slot = incoming.booked_slot;
+const existingRow = valuesToPartialSheetRow(existingValues);
+const merged = mergeSheetRowsForUpsert(existingRow, mapped.sheet);
+if (existingRow.full_name && mapped.sheet.full_name === 'Nieznany kontakt') merged.full_name = existingRow.full_name;
+merged.status = mapped.sheet.status;
+merged.preferred_session_date = mapped.sheet.preferred_session_date || mapped.sheet.booked_slot || merged.preferred_session_date || '';
+merged.booked_slot = mapped.sheet.booked_slot;
 const rowValues = sheetRowValues(merged);
 return [{ json: Object.assign({}, mapped, { sheet: merged, rowValues: rowValues }) }];`;
 
@@ -1037,19 +1142,12 @@ const preferredDate = req.args.preferred_date || req.args.preferredDate || null;
 const preferredTimeOfDay = req.args.preferred_time_of_day || req.args.preferredTimeOfDay || null;
 const preferredTime = req.args.preferred_time || req.args.preferredTime || null;
 const query = parseAvailabilityQuery(preferredDay, preferredDate, now, config.timezone);
-let daysAhead = config.daysAhead;
-if (query.preferredDateYmd) {
-  const target = new Date(query.preferredDateYmd + 'T12:00:00');
-  const diffDays = Math.ceil((target.getTime() - now.getTime()) / 86400000);
-  if (diffDays + 1 > daysAhead) daysAhead = diffDays + 1;
-}
-const timeMax = new Date(now);
-timeMax.setDate(timeMax.getDate() + daysAhead);
+const range = freeBusyTimeRange(now, query, config);
 return [{
   json: {
     freeBusyBody: {
-      timeMin: now.toISOString(),
-      timeMax: timeMax.toISOString(),
+      timeMin: range.timeMin,
+      timeMax: range.timeMax,
       timeZone: config.timezone,
       items: [{ id: calendarId }],
     },
@@ -1074,7 +1172,9 @@ try {
   if (fb && fb.calendars) {
     busyBlocks = parseCalendarBusyBlocks(fb, prep.calendarId);
   }
-} catch (e) { busyBlocks = []; }
+} catch (e) {
+  return [{ json: { available: false, slots: [], message: 'Błąd kalendarza — spróbuj ponownie za chwilę.', error: e.message || String(e) } }];
+}
 const query = prep.preferredDateYmd
   ? { preferredDateYmd: prep.preferredDateYmd, preferredDows: prep.preferredDows || undefined, skipOccurrences: prep.skipOccurrences || 0 }
   : parseAvailabilityQuery(prep.preferredDay, prep.preferredDate, new Date(), config.timezone);
@@ -1429,7 +1529,7 @@ const formatRescheduleAckCode = `try {
 const buildRetellPayloadCode = `const env = (typeof $env !== 'undefined' && $env) ? $env : {};
 const lead = items[0].json;
 const retellKey = ((env.RETELL_API_KEY || '') + '').trim();
-const fromNumber = ((env.RETELL_FROM_NUMBER || '+48324412887') + '').trim();
+const fromNumber = ((env.RETELL_FROM_NUMBER || '') + '').trim();
 const agentId = ((env.RETELL_OUTBOUND_AGENT_ID || env.RETELL_AGENT_ID || '') + '').trim();
 return [{
   json: {
@@ -1555,11 +1655,11 @@ const wf = {
     },
     {
       parameters: {
-        url: '={{ "https://sheets.googleapis.com/v4/spreadsheets/" + $("Map Retell to Sheets").first().json.sheetsDocumentId + "/values/" + encodeURIComponent("\'" + ($json.sheets[0].properties.title) + "\'!A:A") }}',
+        url: '={{ "https://sheets.googleapis.com/v4/spreadsheets/" + $("Map Retell to Sheets").first().json.sheetsDocumentId + "/values/" + encodeURIComponent("\'" + ($json.sheets[0].properties.title) + "\'!A:H") }}',
         authentication: 'predefinedCredentialType', nodeCredentialType: 'googleSheetsOAuth2Api',
         options: { response: { response: { responseFormat: 'json' } } },
       },
-      id: 'sheets-get-phones', name: 'Get Phone Column', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [580, 140],
+      id: 'sheets-get-phones', name: 'Get Sheet Rows', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [580, 140],
       retryOnFail: true, maxTries: 3, waitBetweenTries: 3000, onError: 'continueRegularOutput',
     },
     {
@@ -1983,7 +2083,7 @@ const wf = {
     },
     {
       parameters: {
-        url: '={{ "https://sheets.googleapis.com/v4/spreadsheets/" + ($("Sheets sync ready?").first().json.sheetsDocumentId) + "/values/" + encodeURIComponent("\'" + ($json.sheets[0].properties.title) + "\'!A:A") }}',
+        url: '={{ "https://sheets.googleapis.com/v4/spreadsheets/" + ($("Sheets sync ready?").first().json.sheetsDocumentId) + "/values/" + encodeURIComponent("\'" + ($json.sheets[0].properties.title) + "\'!A:H") }}',
         authentication: 'predefinedCredentialType', nodeCredentialType: 'googleSheetsOAuth2Api',
         options: { response: { response: { responseFormat: 'json' } } },
       },
@@ -2038,7 +2138,30 @@ const wf = {
         options: { response: { response: { responseFormat: 'json' } } },
       },
       id: 'sheets-append-sync', name: 'Append Sheets Row (Sync)', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2,
-      position: [2180, 780], retryOnFail: true, maxTries: 3, waitBetweenTries: 3000, onError: 'continueRegularOutput',
+      position: [2540, 780], retryOnFail: true, maxTries: 3, waitBetweenTries: 3000, onError: 'continueRegularOutput',
+    },
+    {
+      parameters: {
+        conditions: {
+          options: { caseSensitive: true, leftValue: '', typeValidation: 'strict', version: 2 },
+          conditions: [{ id: 'need-delete', leftValue: '={{ $json.deleteRowNumber }}', rightValue: 0, operator: { type: 'number', operation: 'gt' } }],
+          combinator: 'and',
+        },
+        options: {},
+      },
+      id: 'if-need-delete-sync', name: 'Need delete? (Sync)', type: 'n8n-nodes-base.if', typeVersion: 2.2, position: [2180, 780],
+    },
+    {
+      parameters: {
+        method: 'POST',
+        url: '={{ "https://sheets.googleapis.com/v4/spreadsheets/" + $json.sheetsDocumentId + ":batchUpdate" }}',
+        authentication: 'predefinedCredentialType', nodeCredentialType: 'googleSheetsOAuth2Api',
+        sendBody: true, specifyBody: 'json',
+        jsonBody: '={{ JSON.stringify({ requests: [{ deleteDimension: { range: { sheetId: $json.tabSheetId, dimension: "ROWS", startIndex: $json.deleteRowNumber - 1, endIndex: $json.deleteRowNumber } } }] }) }}',
+        options: { response: { response: { responseFormat: 'json' } } },
+      },
+      id: 'sheets-delete-old-sync', name: 'Delete Old Sheet Row (Sync)', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2,
+      position: [2360, 740], retryOnFail: true, maxTries: 3, waitBetweenTries: 3000, onError: 'continueRegularOutput',
     },
   ],
   connections: {
@@ -2054,8 +2177,8 @@ const wf = {
         [{ node: 'Build Webhook Ack', type: 'main', index: 0 }],
       ],
     },
-    'Get Sheet Tab Name': { main: [[{ node: 'Get Phone Column', type: 'main', index: 0 }]] },
-    'Get Phone Column': { main: [[{ node: 'Prepare Sheets Upsert', type: 'main', index: 0 }]] },
+    'Get Sheet Tab Name': { main: [[{ node: 'Get Sheet Rows', type: 'main', index: 0 }]] },
+    'Get Sheet Rows': { main: [[{ node: 'Prepare Sheets Upsert', type: 'main', index: 0 }]] },
     'Prepare Sheets Upsert': { main: [[{ node: 'Row exists?', type: 'main', index: 0 }]] },
     'Row exists?': {
       main: [
@@ -2197,11 +2320,18 @@ const wf = {
     'Sync row exists?': {
       main: [
         [{ node: 'Get Existing Row (Sync)', type: 'main', index: 0 }],
-        [{ node: 'Append Sheets Row (Sync)', type: 'main', index: 0 }],
+        [{ node: 'Need delete? (Sync)', type: 'main', index: 0 }],
       ],
     },
     'Get Existing Row (Sync)': { main: [[{ node: 'Merge Sheets Row (Sync)', type: 'main', index: 0 }]] },
     'Merge Sheets Row (Sync)': { main: [[{ node: 'Update Sheets Row (Sync)', type: 'main', index: 0 }]] },
+    'Need delete? (Sync)': {
+      main: [
+        [{ node: 'Delete Old Sheet Row (Sync)', type: 'main', index: 0 }],
+        [{ node: 'Append Sheets Row (Sync)', type: 'main', index: 0 }],
+      ],
+    },
+    'Delete Old Sheet Row (Sync)': { main: [[{ node: 'Append Sheets Row (Sync)', type: 'main', index: 0 }]] },
   },
   pinData: {},
   meta: { templateCredsSetupCompleted: true },
@@ -2209,6 +2339,6 @@ const wf = {
 };
 
 mkdirSync(join(root, 'workflows'), { recursive: true });
-const out = join(root, 'workflows', 'vapi-outbound-agent.json');
+const out = join(root, 'workflows', 'retell-voice-agent.json');
 writeFileSync(out, JSON.stringify(wf, null, 2) + '\n', 'utf8');
 console.log('Wrote', out);

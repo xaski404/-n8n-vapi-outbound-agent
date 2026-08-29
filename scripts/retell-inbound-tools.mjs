@@ -5,18 +5,14 @@
 
 /** Safe end_call description — the default Retell text caused silent hangups on reschedule intent. Max 1024 chars. */
 export const END_CALL_TOOL_DESCRIPTION = [
-  'KIEDY MOŻESZ rozłączyć:',
-  '1. Powiedziałaś „Do usłyszenia” i klient nie ma więcej pytań.',
-  '2. Klient wyraźnie się pożegnał: do widzenia, pa, do usłyszenia.',
-  '3. Klient odmawia rozmowy: pomyłka, nie dzwoniłem, nie interesuje, nie mam czasu.',
+  'KIEDY: po „Czy mogę jeszcze pomóc?” klient kończy (nie / dzięki / to wszystko / nie mam pytań) LUB sam się pożegnał (pa, do widzenia) LUB odmawia rozmowy.',
   '',
-  'KIEDY NIE WOLNO rozłączać:',
-  '• Klient chce umówić, odwołać lub przełożyć wizytę.',
-  '• Klient dopiero podał intencję — najpierw obsłuż (list / book / cancel / reschedule).',
-  '• Po udanym book, cancel lub reschedule — najpierw zapytaj: „Czy mogę jeszcze jakoś pomóc?”',
-  '• „No”, „dobra”, „tak”, „dzień dobry” to NIE pożegnanie.',
+  'JAK: w jednej turze powiedz TYLKO „Do usłyszenia.” i od razu end_call. NIE czekaj na odpowiedź.',
+  'Jeśli klient powtórzy „do usłyszenia” po Twoim pożegnaniu → end_call BEZ słów (cisza).',
+  'ZAKAZ: „rozłączam rozmowę”, „rozłączam”, „kończę rozmowę” — klient tego nie słyszy.',
   '',
-  'ZAWSZE przed end_call powiedz pożegnanie głosem.',
+  'NIE rozłączaj gdy: umawianie/odwołanie/przełożenie, klient podał intencję, po book/cancel/reschedule bez pytania o dalszą pomoc.',
+  '„No”, „dobra”, „tak” to NIE pożegnanie.',
 ].join('\n');
 
 export const LIST_MY_APPOINTMENTS_TOOL_DESCRIPTION = [
@@ -72,22 +68,22 @@ export function patchEndCallTool(tools) {
       description: END_CALL_TOOL_DESCRIPTION,
       speak_after_execution: false,
       speak_during_execution: false,
-      execution_message_type: 'prompt',
-      execution_message_description: '',
+      execution_message_type: 'static_text',
+      execution_message_description: ' ',
     };
   });
 }
 
 export function calendarTool(base, name, description, url, parameters, executionMessage, options = {}) {
-  const mutating = options.mutating === true;
   return {
     type: 'custom',
     name,
     description,
-    speak_during_execution: mutating ? false : true,
-    speak_after_execution: mutating ? false : true,
-    execution_message_type: mutating ? 'prompt' : 'static_text',
-    execution_message_description: mutating ? '' : executionMessage,
+    // Tool stays SILENT. The LLM says the wait phrase in one fluid sentence BEFORE
+    // the call (per prompt), then speaks the result. speak_during_execution:true was
+    // cutting the wait phrase mid-word ("sprawdzam / Twoje wizyty").
+    speak_during_execution: false,
+    speak_after_execution: false,
     method: 'POST',
     url,
     parameters,

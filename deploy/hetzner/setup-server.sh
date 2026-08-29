@@ -17,7 +17,7 @@ cd /opt/n8n-retell
 
 echo ""
 echo "Done. Next steps:"
-echo "  1. Copy deploy/hetzner/* and workflows/vapi-outbound-agent.json to /opt/n8n-retell/"
+echo "  1. Copy deploy/hetzner/* and workflows/retell-voice-agent.json to /opt/n8n-retell/"
 echo "  2. Copy .env (from laptop) to /opt/n8n-retell/.env"
 echo "  3. cd /opt/n8n-retell && docker compose up -d"
 echo "  4. Open n8n UI via SSH tunnel: ssh -L 5678:127.0.0.1:5678 root@YOUR_VPS_IP"

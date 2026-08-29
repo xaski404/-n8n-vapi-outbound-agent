@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const envFile = join(root, '.env');
 const faqFile = join(root, 'data', 'faq-pl.json');
-const INBOUND_AGENT_ID = 'agent_edfc81cbe141dc83d40217c3b1';
+// Agent ID from .env — no hardcoded fallback
 const KB_NAME = 'Studio FAQ PL';
 
 function readDotEnv(path) {
@@ -77,7 +77,11 @@ async function ensureEditableDraft(apiKey, agentId) {
 
 const env = readDotEnv(envFile);
 const apiKey = env.RETELL_API_KEY;
-const inboundAgentId = env.RETELL_INBOUND_AGENT_ID || INBOUND_AGENT_ID;
+const inboundAgentId = env.RETELL_INBOUND_AGENT_ID;
+if (!inboundAgentId) {
+  console.error('Brak RETELL_INBOUND_AGENT_ID w .env');
+  process.exit(1);
+}
 if (!apiKey) {
   console.error('Brak RETELL_API_KEY w .env');
   process.exit(1);

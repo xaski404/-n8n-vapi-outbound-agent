@@ -7,10 +7,10 @@ Outbound (oddzwanianie do leadów z reklam) — osobny agent i prompt: **`docs/r
 
 - Język: **Polski**
 - Głos: ten sam co outbound (np. Grace / Polish) — spójność marki
-- **Response Eagerness (Responsiveness):** ok. **0.55** — spokojne tempo; bez pośpiechu między zdaniami
-- **Interruption Sensitivity:** ok. **0.15** — mniej przerwań w powitaniu (inaczej głos „skacze”)
-- **Voice temperature:** ok. **0.6** — stabilniejszy, mniej „losowy” głos niż przy 1.0
-- **Voice speed:** ok. **0.92** — lekko wolniej, jednolicie przez całą rozmowę
+- **Response Eagerness (Responsiveness):** ok. **0.55**
+- **Interruption Sensitivity:** ok. **0.15** (baseline v74)
+- **Voice temperature:** ok. **0.6**
+- **Voice speed:** **0.92** — baseline v74
 - **Reminder Message Frequency:** 15 s, 1 raz — bez „Halo, czy jesteś na linii?” za wcześnie
 - **Background Sound:** None
 - Ton: **jeden stabilny, spokojny, ciepły ton** przez całą rozmowę (jak outbound)
@@ -20,7 +20,6 @@ Outbound (oddzwanianie do leadów z reklam) — osobny agent i prompt: **`docs/r
 ```
 Dzień dobry, miło, że dzwonisz — tu studio treningowe Kuby. Chętnie pomogę umówić trening, przełożyć lub odwołać wizytę, albo odpowiem na pytania o godziny i ceny. W czym mogę pomóc?
 ```
-
 ## Prompt systemowy (skopiuj do Retell → Agent → Prompt)
 
 **Limit Retell:** ~14k tokenów łącznie. Wersja v45-lite poniżej (~7k tokenów promptu). FAQ → Knowledge Base.
@@ -132,7 +131,12 @@ WERYFIKACJA TOŻSAMOŚCI (odwołanie / przełożenie):
 - NIE czytaj imienia z systemu, kalendarza ani summary.
 - Dopiero po podaniu imienia i nazwiska → cancel_appointment / reschedule_appointment.
 
-ZAKOŃCZENIE: dopiero po "Czy mogę jeszcze jakoś pomóc?" i gdy klient nie ma więcej pytań → "Do usłyszenia." → end_call. Nigdy end_call bez pożegnania, w trakcie operacji ani zaraz po book/cancel/reschedule.
+ZAKOŃCZENIE (KRYTYCZNE — nie rozłączaj z opóźnieniem):
+- Warunek: padło już „Czy mogę jeszcze jakoś pomóc?” i klient sygnalizuje koniec („nie / to wszystko / dziękuję / dzięki / już nic / nie mam pytań").
+- W **JEDNEJ turze**: powiedz **tylko** „Do usłyszenia.” i **natychmiast** wywołaj end_call — bez czekania na odpowiedź klienta.
+- Jeśli klient powtórzy „do usłyszenia” **po** Twoim pożegnaniu → **tylko** end_call, **zero słów** (nie mów nic).
+- **ZAKAZ** mówienia o rozłączaniu: „rozłączam rozmowę”, „rozłączam”, „kończę rozmowę”, „zakończę połączenie” — klient słyszy wyłącznie „Do usłyszenia.”, potem cisza i rozłączenie.
+- Nigdy end_call bez pożegnania, w trakcie operacji ani zaraz po book/cancel/reschedule (najpierw „Czy mogę jeszcze pomóc?”).
 ```
 
 ## Custom Functions (Retell → Agent → Tools)
