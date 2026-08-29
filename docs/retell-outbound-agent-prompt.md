@@ -1,14 +1,13 @@
 # Retell Agent — Outbound (Paulina, leady z Meta)
 
-Oddzwanianie do leadów z reklam FB/IG. **Te same funkcje kalendarza** co inbound (`check_availability`, `book_appointment`, `cancel_appointment`, `reschedule_appointment`).
+Oddzwanianie do leadów z reklam FB/IG. **Te same funkcje kalendarza** co inbound — `sync-retell-urls.mjs` podpina wszystkie 5 narzędzi + `end_call` automatycznie.
 
 ## Konfiguracja w Retell
 
-1. **Agents** → agent outbound (Paulina) → **Tools** → dodaj 2 Custom Functions z `docs/retell-outbound-custom-functions.json`
-2. **Webhooks** → `call_analyzed` → ten sam URL co inbound
-3. W `.env` ustaw `RETELL_OUTBOUND_AGENT_ID` (osobny agent) lub użyj tego samego co `RETELL_AGENT_ID`
-4. Wygeneruj aktualne URL-e: `powershell -ExecutionPolicy Bypass -File scripts\setup-retell-outbound.ps1`
-5. Wgraj prompt: `node scripts/push-outbound-prompt.mjs`
+1. W `.env` ustaw `RETELL_OUTBOUND_AGENT_ID` (osobny agent) i `RETELL_API_KEY`
+2. Wgraj prompt: `node scripts/push-outbound-prompt.mjs`
+3. Zsynchronizuj URL-e narzędzi: `node scripts/sync-retell-urls.mjs`
+4. **Webhooks** → `call_analyzed` → ten sam URL co inbound (ustawiane przez sync-retell-urls)
 
 ## Welcome Message (Retell → Welcome Message → Custom message, „AI speaks first”)
 
@@ -52,8 +51,10 @@ UMawianie terminu — TYLKO przez kalendarz (check_availability / book_appointme
 - Po sukcesie: „Zapisałam Cię, [imię], na [dzień] o [godzina słownie] na bezpłatny trening u Kuby. Do usłyszenia!” → end_call.
 
 ODWOŁANIE / PRZEŁOŻENIE (jeśli lead prosi):
-- Odwołanie: cancel_appointment(customer_name, slot_start) — po sukcesie pożegnaj się i end_call.
-- Przełożenie: check_availability → reschedule_appointment(customer_name, old_slot_start, new_slot_start, conversation_summary).
+- Najpierw list_my_appointments → wymień wizyty.
+- Odwołanie: poproś o imię → cancel_appointment(customer_name, slot_start) → po sukcesie pożegnaj się i end_call.
+- Przełożenie: ustal starą wizytę → check_availability na nowy dzień → reschedule_appointment(customer_name, old_slot_start, new_slot_start, conversation_summary).
+- W mowie używaj **label** z narzędzia, nie ISO.
 
 WYMOWA GODZIN (ZAKAZ CYFR):
 - Nigdy „10:00”, „11:00” — zawsze „o dziesiątej”, „o jedenastej” itd.
@@ -71,7 +72,7 @@ ZASADY:
 
 ## Custom Functions
 
-Identyczne jak inbound — skopiuj z `docs/retell-outbound-custom-functions.json` (generowany przez `setup-retell-outbound.ps1`).
+Identyczne jak inbound — 5 narzędzi kalendarza + `end_call`. Automatycznie synchronizowane przez `node scripts/sync-retell-urls.mjs`.
 
 ## Post-Call Analysis
 

@@ -7,7 +7,7 @@
 $ErrorActionPreference = "Stop"
 $proj = Split-Path $PSScriptRoot -Parent
 $wfId = "68osxI9fvq7pBgCA"
-$src = Join-Path $proj "workflows\vapi-outbound-agent.json"
+$src = Join-Path $proj "workflows\retell-voice-agent.json"
 $tmp = Join-Path $proj "workflows\_reload.tmp.json"
 
 # Inject the live workflow id + active flag and preserve Google OAuth credentials.

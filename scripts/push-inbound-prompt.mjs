@@ -15,12 +15,14 @@ import { patchEndCallTool } from './retell-inbound-tools.mjs';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const envFile = join(root, '.env');
 const docFile = join(root, 'docs', 'retell-agent-prompt.md');
-const INBOUND_AGENT_ID = 'agent_edfc81cbe141dc83d40217c3b1';
+// Agent ID from .env — no hardcoded fallback
 
+// Baseline: agent v74 (prod) — Grace, spokojniejsze tempo, mniej agresywne przerywanie
 const RESPONSIVENESS = 0.55;
 const INTERRUPTION_SENSITIVITY = 0.15;
 const VOICE_TEMPERATURE = 0.6;
 const VOICE_SPEED = 0.92;
+const DEFAULT_VOICE_ID = '11labs-Grace';
 const MAX_CALL_DURATION_MS = 600_000; // 10 min — umówienie + przełożenie + FAQ w jednej rozmowie
 const END_CALL_AFTER_SILENCE_MS = 45_000;
 
@@ -88,7 +90,11 @@ async function ensureEditableDraft(apiKey, agentId) {
 const env = readDotEnv(envFile);
 const apiKey = env.RETELL_API_KEY;
 const phone = env.RETELL_FROM_NUMBER;
-const inboundAgentId = env.RETELL_INBOUND_AGENT_ID || INBOUND_AGENT_ID;
+const inboundAgentId = env.RETELL_INBOUND_AGENT_ID;
+if (!inboundAgentId) {
+  console.error('Brak RETELL_INBOUND_AGENT_ID w .env');
+  process.exit(1);
+}
 if (!apiKey) {
   console.error('Brak RETELL_API_KEY w .env');
   process.exit(1);
@@ -107,6 +113,7 @@ await retellFetch(apiKey, `/update-retell-llm/${draft.llmId}`, {
   body: JSON.stringify({
     general_prompt: prompt,
     begin_message: welcome,
+    start_speaker: 'agent',
     general_tools: patchEndCallTool(llm.general_tools),
     ...(env.RETELL_KB_ID ? { knowledge_base_ids: [env.RETELL_KB_ID] } : {}),
   }),
@@ -115,6 +122,7 @@ await retellFetch(apiKey, `/update-retell-llm/${draft.llmId}`, {
 const agent = await retellFetch(apiKey, `/update-agent/${inboundAgentId}`, {
   method: 'PATCH',
   body: JSON.stringify({
+    language: 'pl-PL',
     responsiveness: RESPONSIVENESS,
     interruption_sensitivity: INTERRUPTION_SENSITIVITY,
     voice_temperature: VOICE_TEMPERATURE,
@@ -122,6 +130,7 @@ const agent = await retellFetch(apiKey, `/update-agent/${inboundAgentId}`, {
     enable_expressive_mode: false,
     max_call_duration_ms: MAX_CALL_DURATION_MS,
     end_call_after_silence_ms: END_CALL_AFTER_SILENCE_MS,
+    voice_id: env.RETELL_INBOUND_VOICE_ID || DEFAULT_VOICE_ID,
   }),
 });
 

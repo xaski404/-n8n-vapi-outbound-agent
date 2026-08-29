@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const envFile = join(root, '.env');
 const docFile = join(root, 'docs', 'retell-outbound-agent-prompt.md');
-const OUTBOUND_AGENT_ID = 'agent_8d93c1c50313f224a2be084d2a';
+// Agent ID from .env — no hardcoded fallback
 
 const RESPONSIVENESS = 0.8;
 const INTERRUPTION_SENSITIVITY = 0.5;
@@ -83,9 +83,11 @@ async function ensureEditableDraft(apiKey, agentId) {
 const env = readDotEnv(envFile);
 const apiKey = env.RETELL_API_KEY;
 const phone = env.RETELL_FROM_NUMBER;
-const outboundAgentId =
-  env.RETELL_OUTBOUND_AGENT_ID || env.RETELL_AGENT_ID || OUTBOUND_AGENT_ID;
-
+const outboundAgentId = env.RETELL_OUTBOUND_AGENT_ID || env.RETELL_AGENT_ID;
+if (!outboundAgentId) {
+  console.error('Brak RETELL_OUTBOUND_AGENT_ID w .env');
+  process.exit(1);
+}
 if (!apiKey) {
   console.error('Brak RETELL_API_KEY w .env');
   process.exit(1);

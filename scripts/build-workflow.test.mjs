@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
-const workflowPath = join(root, 'workflows', 'vapi-outbound-agent.json');
+const workflowPath = join(root, 'workflows', 'retell-voice-agent.json');
 const backupPath = `${workflowPath}.test-backup`;
 
 function runBuild() {

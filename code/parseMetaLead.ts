@@ -11,7 +11,7 @@
 import type { MetaLeadPayload, NormalisedLead } from './types';
 
 /** Coerce arbitrary phone input to E.164. Assumes a default country code. */
-function toE164(raw: string, defaultCountryCode = '+1'): string {
+function toE164(raw: string, defaultCountryCode = '+48'): string {
   const trimmed = (raw ?? '').toString().trim();
   if (!trimmed) throw new Error('phone_number is empty');
 
