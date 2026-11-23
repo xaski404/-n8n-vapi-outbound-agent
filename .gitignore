@@ -4,3 +4,9 @@ code/dist/
 *.log
 .specstory/
 _fix_prompt.py
+
+# n8n execution dumps, local databases and debug exports (contain transcripts, phone numbers, credentials)
+workflows/_*
+scripts/_exec*
+scripts/_latest-call.json
+*.sqlite
